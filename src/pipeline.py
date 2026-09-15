@@ -53,10 +53,12 @@ def clean_and_transform_data(file_path):
         df['quarter'] = df['order_date'].dt.quarter
         df['day_of_week'] = df['order_date'].dt.day_name()
 
-    # 3. Ép kiểu dữ liệu số & Điền Null
+    # 3. Ép kiểu dữ liệu số & Điền Null (Loại bỏ ký tự rác như $, phẩy)
     numeric_cols = ['sales', 'quantity', 'discount', 'profit']
     for col in numeric_cols:
         if col in df.columns:
+            if df[col].dtype == 'object':
+                df[col] = df[col].astype(str).str.replace('$', '', regex=False).str.replace(',', '', regex=False).str.strip()
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     # 4. Tính toán chỉ số bổ sung

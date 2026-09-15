@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
-
+from src.eda import plot_sales_over_time, plot_category_performance, plot_discount_vs_profit
 st.set_page_config(
     page_title="SMB Sales Analytics & Pricing", 
     page_icon="📊",
