@@ -10,6 +10,7 @@ from src.eda import (
     plot_top_subcategories,
     plot_sales_heatmap
 )
+from src.stats import render_streamlit as render_statistical_tests
 
 st.set_page_config(
     page_title="SMB Sales Analytics & Pricing", 
@@ -92,6 +93,9 @@ if df is not None and not df.empty:
             st.plotly_chart(plot_top_subcategories(df_filtered), width="stretch")
         with col_eda2:
             st.plotly_chart(plot_sales_heatmap(df_filtered), width="stretch")
+                    st.markdown("---")
+        st.subheader("🧪 Kiểm định thống kê: Chiết khấu và Lợi nhuận")
+        render_statistical_tests(df_filtered, discount_col="discount", profit_col="profit")
 
         st.markdown("---")
         st.markdown("### 📋 Dữ liệu mẫu (Top 10 dòng)")
