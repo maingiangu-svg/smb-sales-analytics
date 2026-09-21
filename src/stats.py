@@ -18,8 +18,8 @@ import pandas as pd
 from scipy import stats as sps
  
 ALPHA = 0.05
-DISCOUNT_COL = "Discount"
-PROFIT_COL = "Profit"
+DISCOUNT_COL = "discount"
+PROFIT_COL = "profit"
 GROUP_COL = "Discount_Group"
  
 # Discount dạng tỉ lệ (0, 0.1, 0.2, ...). Khoảng đóng bên phải: (a, b]
