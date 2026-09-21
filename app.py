@@ -9,9 +9,10 @@ from src.eda import (
     plot_category_performance,
     plot_discount_vs_profit,
     plot_top_subcategories,
-    plot_sales_heatmap
+    plot_sales_heatmap,
 )
 from src.model import load_or_train_model, optimize_discount
+from src.stats import render_streamlit as render_stats
 
 st.set_page_config(
     page_title="SMB Sales Analytics & Pricing", 
@@ -30,7 +31,6 @@ def load_data_from_db():
         df = pd.read_sql("SELECT * FROM sales_data", conn)
         conn.close()
         
-        # Convert order_date sang datetime ngay khi load DB
         if 'order_date' in df.columns:
             df['order_date'] = pd.to_datetime(df['order_date'], errors='coerce')
             
@@ -45,7 +45,6 @@ st.markdown("---")
 df = load_data_from_db()
 
 if df is not None and not df.empty:
-    # Sidebar: Bộ lọc dữ liệu
     st.sidebar.header("🔍 Bộ Lọc Dữ Liệu")
     categories = df['category'].dropna().unique().tolist() if 'category' in df.columns else []
     selected_category = st.sidebar.multiselect(
@@ -59,11 +58,9 @@ if df is not None and not df.empty:
     else:
         df_filtered = df.copy()
 
-    # Phân chia Tabs
     tab1, tab2 = st.tabs(["📊 Analytics & Insights", "🤖 Pricing Simulator (ML)"])
 
     with tab1:
-        # Hàng KPI tổng quan
         total_sales = df_filtered['sales'].sum() if 'sales' in df_filtered.columns else 0.0
         total_profit = df_filtered['profit'].sum() if 'profit' in df_filtered.columns else 0.0
         total_orders = df_filtered['order_id'].nunique() if 'order_id' in df_filtered.columns else len(df_filtered)
@@ -77,23 +74,27 @@ if df is not None and not df.empty:
         
         st.markdown("---")
         
-        # Biểu đồ xu hướng thời gian
         st.subheader("📈 Phân tích Doanh thu & Lợi nhuận")
         st.plotly_chart(plot_sales_over_time(df_filtered), width="stretch")
         
-        # Cặp biểu đồ phân bổ danh mục & tương quan chiết khấu
         col_left, col_right = st.columns(2)
         with col_left:
             st.plotly_chart(plot_category_performance(df_filtered), width="stretch")
         with col_right:
             st.plotly_chart(plot_discount_vs_profit(df_filtered), width="stretch")
 
-        # Cặp biểu đồ nâng cao mới (Top Sub-category & Heatmap)
         col_eda1, col_eda2 = st.columns(2)
         with col_eda1:
-            st.plotly_chart(plot_top_subcategories(df_filtered), width="stretch")
+            fig_sub = plot_top_subcategories(df_filtered)
+            st.plotly_chart(fig_sub, width="stretch")
         with col_eda2:
-            st.plotly_chart(plot_sales_heatmap(df_filtered), width="stretch")
+            fig_heat = plot_sales_heatmap(df_filtered)
+            st.plotly_chart(fig_heat, width="stretch")
+
+        st.markdown("---")
+        
+        # Phần kiểm định thống kê của Đức
+        render_stats(df_filtered, discount_col='discount', profit_col='profit')
 
         st.markdown("---")
         st.markdown("### 📋 Dữ liệu mẫu (Top 10 dòng)")
