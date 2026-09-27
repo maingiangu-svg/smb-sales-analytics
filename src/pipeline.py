@@ -91,7 +91,7 @@ def run_pipeline(excel_file_path):
     """
     Chạy toàn bộ Pipeline: Clean -> Lưu vào SQLite
     """
-    print(f"🔄 Đang xử lý file: {excel_file_path}...")
+    print(f"[INFO] Dang xu ly file: {excel_file_path}...")
     df_clean = clean_and_transform_data(excel_file_path)
     
     conn = create_connection()
@@ -99,7 +99,7 @@ def run_pipeline(excel_file_path):
     df_clean.to_sql("sales_data", conn, if_exists="replace", index=False)
     conn.close()
     
-    print(f"✅ Đã xử lý xong {len(df_clean)} dòng dữ liệu và lưu vào SQLite ({DB_PATH})!")
+    print(f"[OK] Da xu ly xong {len(df_clean)} dong du lieu va luu vao SQLite ({DB_PATH})!")
     return df_clean
 
 if __name__ == "__main__":
@@ -107,4 +107,4 @@ if __name__ == "__main__":
     if os.path.exists(sample_file):
         run_pipeline(sample_file)
     else:
-        print("💡 Chưa có file mẫu trong data/. Hãy thả 1 file Excel/CSV vào thư mục data/ để test.")
+        print("[NOTICE] Chua co file mau trong data/. Hay tha 1 file Excel/CSV vao thu muc data/ de test.")
