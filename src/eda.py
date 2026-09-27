@@ -80,15 +80,12 @@ def plot_discount_vs_profit(df):
 # Thêm fallback check dữ liệu đầu vào (tránh crash khi lọc dataframe rỗng).
 
 def plot_top_subcategories(df, top_n=10):
-    """
-    Biểu đồ cột ngang: Top N Sub-category đóng góp Lợi nhuận cao nhất.
-    Chấp nhận cả 'sub_category' và 'subcategory' (tùy cách chuẩn hóa tên cột ở pipeline).
-    """
+ 
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return px.bar(title="⚠️ Không có dữ liệu để hiển thị (dataframe rỗng)")
 
     subcat_col = next(
-        (c for c in ['sub_category', 'subcategory', 'sub-category'] if c in df.columns),
+        (c for c in ['sub_category', 'subcategory', 'sub-category', 'category'] if c in df.columns),
         None
     )
 
