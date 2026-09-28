@@ -53,7 +53,8 @@ def process_data_quality(df: pd.DataFrame) -> pd.DataFrame:
     df = df.drop_duplicates()
 
     # 1.4 Làm sạch ký tự lạ, quy đổi 'ERROR'/'UNKNOWN' thành NaN và ép kiểu số
-    numeric_cols = ['sales', 'quantity', 'price_per_unit', 'discount', 'profit']
+    # Thêm 'cost' vào danh sách cột số cần làm sạch
+    numeric_cols = ['sales', 'quantity', 'price_per_unit', 'cost', 'discount', 'profit']
     for col in numeric_cols:
         if col in df.columns:
             if df[col].dtype == 'object':
