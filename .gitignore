@@ -5,4 +5,4 @@ __pycache__/
 data/*.db
 data/*.xlsx
 *.csv
-venv/
+venv/.vscode/
