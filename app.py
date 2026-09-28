@@ -1,15 +1,16 @@
-import streamlit as st
-import pandas as pd
-import sqlite3
 import os
+import sqlite3
+import pandas as pd
 import plotly.express as px
+import streamlit as st
 
+from src.business_report import render_business_report
 from src.eda import (
-    plot_sales_over_time,
     plot_category_performance,
     plot_discount_vs_profit,
-    plot_top_subcategories,
     plot_sales_heatmap,
+    plot_sales_over_time,
+    plot_top_subcategories,
 )
 from src.model import load_or_train_model, optimize_discount
 from src.stats import render_streamlit as render_stats
@@ -21,6 +22,7 @@ st.set_page_config(
 )
 
 DB_PATH = os.path.join("data", "data.db")
+
 
 @st.cache_data
 def load_data_from_db():
@@ -38,6 +40,7 @@ def load_data_from_db():
     except Exception as e:
         st.error(f"Lỗi kết nối CSDL: {e}")
         return None
+
 
 st.title("📊 SMB Sales Analytics & Pricing Optimization Platform")
 st.markdown("---")
@@ -58,8 +61,16 @@ if df is not None and not df.empty:
     else:
         df_filtered = df.copy()
 
-    tab1, tab2 = st.tabs(["📊 Analytics & Insights", "🤖 Pricing Simulator (ML)"])
+    # Khai báo đầy đủ 3 Tab tích hợp công việc của cả 4 thành viên
+    tab1, tab2, tab3 = st.tabs([
+        "📊 Analytics & Insights", 
+        "🤖 Pricing Simulator (ML)", 
+        "📑 Business Report"
+    ])
 
+    # =========================================================================
+    # TAB 1: EDA (An) & STATISTICAL TESTING (Đức)
+    # =========================================================================
     with tab1:
         total_sales = df_filtered['sales'].sum() if 'sales' in df_filtered.columns else 0.0
         total_profit = df_filtered['profit'].sum() if 'profit' in df_filtered.columns else 0.0
@@ -93,13 +104,16 @@ if df is not None and not df.empty:
 
         st.markdown("---")
         
-        # Phần kiểm định thống kê của Đức
+        # Phân hệ Kiểm định thống kê của Đức
         render_stats(df_filtered, discount_col='discount', profit_col='profit')
 
         st.markdown("---")
         st.markdown("### 📋 Dữ liệu mẫu (Top 10 dòng)")
         st.dataframe(df_filtered.head(10), width="stretch")
 
+    # =========================================================================
+    # TAB 2: MACHINE LEARNING PRICING SIMULATOR (Trí)
+    # =========================================================================
     with tab2:
         st.subheader("💡 Gợi Ý Mức Chiết Khấu Tối Ưu Lợi Nhuận (Machine Learning)")
         st.write("Hệ thống sử dụng mô hình Machine Learning **RandomForestRegressor** được huấn luyện trên dữ liệu doanh số để mô phỏng và tìm ra mức Chiết khấu (Discount) tối đa hóa Lợi nhuận.")
@@ -134,12 +148,11 @@ if df is not None and not df.empty:
                 m_col1, m_col2, m_col3 = st.columns(3)
                 m_col1.metric("Chiết Khấu Tối Ưu", f"{opt_discount_pct:.1f}%")
                 m_col2.metric("Lợi Nhuận Dự Báo Tối Đa", f"${max_profit:,.2f}")
-                m_col3.metric("Tỷ Tỉ Lệ Lợi Nhuận (Margin)", f"{profit_margin:.1f}%")
+                m_col3.metric("Tỷ Lệ Lợi Nhuận (Margin)", f"{profit_margin:.1f}%")
                 
                 st.markdown("---")
                 st.markdown("#### 📈 Đường Cong Lợi Nhuận Theo Mức Chiết Khấu (Profit vs Discount Curve)")
                 
-                # Tạo biểu đồ đường bằng Plotly
                 sim_df_plot = sim_df.copy()
                 sim_df_plot['discount_pct'] = sim_df_plot['discount'] * 100
                 
@@ -151,7 +164,6 @@ if df is not None and not df.empty:
                     labels={'discount_pct': 'Tỷ lệ Chiết khấu (%)', 'predicted_profit': 'Lợi nhuận dự báo ($)'}
                 )
                 
-                # Highlight điểm cực đại
                 fig_curve.add_scatter(
                     x=[opt_discount_pct],
                     y=[max_profit],
@@ -164,11 +176,9 @@ if df is not None and not df.empty:
                 fig_curve.update_layout(template='plotly_white')
                 st.plotly_chart(fig_curve, width="stretch")
                 
-                # Bảng so sánh 3 kịch bản
                 st.markdown("#### ⚖️ Bảng So Sánh Kịch Bản Chiết Khấu")
                 baseline_row = sim_df.loc[sim_df['discount'] == 0.0].iloc[0]
                 std_row = sim_df.loc[(sim_df['discount'] - 0.15).abs().idxmin()]
-                opt_row = sim_df.loc[sim_df['discount'] == opt_result['optimal_discount']].iloc[0]
                 
                 scenario_df = pd.DataFrame([
                     {
@@ -197,6 +207,12 @@ if df is not None and not df.empty:
                 
             except Exception as e:
                 st.error(f"⚠️ Lỗi khi mô phỏng mô hình ML: {e}")
+
+    # =========================================================================
+    # TAB 3: BUSINESS REPORT (Mạnh)
+    # =========================================================================
+    with tab3:
+        render_business_report(df_filtered)
 
 else:
     st.warning("⚠️ Chưa tìm thấy dữ liệu trong Database. Vui lòng kiểm tra file `data/data.db` hoặc chạy `src/pipeline.py`!")
