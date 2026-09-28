@@ -15,10 +15,7 @@ def render_business_report(df):
     st.subheader("📑 Business Report")
     st.caption("Tổng hợp tình hình kinh doanh từ dữ liệu bán hàng.")
 
-    # =========================
-    # 1. KPI
-    # =========================
-
+  
     total_sales = (
         df["sales"].sum()
         if "sales" in df.columns
@@ -78,9 +75,7 @@ def render_business_report(df):
 
     st.markdown("---")
 
-    # =========================
-    # 2. Hiệu quả theo Category
-    # =========================
+
 
     if "category" in df.columns:
 
@@ -115,9 +110,6 @@ def render_business_report(df):
             hide_index=True
         )
 
-    # =========================
-    # 3. Top sản phẩm
-    # =========================
 
     subcategory_col = None
 
@@ -149,9 +141,6 @@ def render_business_report(df):
             hide_index=True
         )
 
-    # =========================
-    # 4. Báo cáo theo thời gian
-    # =========================
 
     if "order_date" in df.columns:
 
@@ -201,10 +190,7 @@ def render_business_report(df):
                 hide_index=True
             )
 
-    # =========================
-    # 5. Business Summary
-    # =========================
-
+ 
     st.markdown("---")
     st.subheader("📝 Business Summary")
 
