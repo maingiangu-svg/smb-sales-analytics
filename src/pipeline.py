@@ -68,12 +68,18 @@ def process_data_quality(df: pd.DataFrame) -> pd.DataFrame:
                 )
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # 1.5 Khôi phục giá trị thiếu bằng toán học (Quantity * Price = Sales)
+    # 1.5 Domain Constraint Validation: Cost không thể âm về mặt nghiệp vụ
+    # (Các giá trị rỗng/ERROR/UNKNOWN đã được chuyển về NaN ở bước 1.4,
+    #  bước này bổ sung: chuyển tiếp các giá trị âm còn sót lại về NaN)
+    if 'cost' in df.columns:
+        df.loc[df['cost'] < 0, 'cost'] = np.nan
+
+    # 1.6 Khôi phục giá trị thiếu bằng toán học (Quantity * Price = Sales)
     if 'sales' in df.columns and 'quantity' in df.columns and 'price_per_unit' in df.columns:
         mask_sales = df['sales'].isna() & df['quantity'].notna() & df['price_per_unit'].notna()
         df.loc[mask_sales, 'sales'] = df['quantity'] * df['price_per_unit']
 
-    # 1.6 Xử lý Missing Values
+    # 1.7 Xử lý Missing Values
     if 'order_id' in df.columns:
         df = df.dropna(subset=['order_id'])
     
