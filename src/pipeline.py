@@ -190,14 +190,19 @@ def clean_and_transform_data(file_path: str) -> pd.DataFrame:
 
 
 def run_pipeline(file_path: str):
-    print(f"🔄 Đang xử lý file: {file_path}...")
+    print(f"[PROCESS] Dang xu ly file: {file_path}...")
     df_clean = clean_and_transform_data(file_path)
 
     conn = create_connection()
     df_clean.to_sql(TABLE_NAME, conn, if_exists="replace", index=False)
     conn.close()
 
-    print(f"✅ Đã xử lý xong {len(df_clean)} dòng dữ liệu và lưu vào SQLite ({DB_PATH})!")
+    output_csv = os.path.join("data", "cleaned_data.csv")
+    df_clean.to_csv(output_csv, index=False, encoding='utf-8-sig')
+
+    print(f"[OK] Da xu ly xong {len(df_clean)} dong du lieu!")
+    print(f"[DATABASE] Da luu vao SQLite ({DB_PATH})")
+    print(f"[EXPORT] Da xuat file CSV sach tai: {output_csv}")
     return df_clean
 
 
