@@ -110,6 +110,15 @@ if df is not None and not df.empty:
         st.markdown("---")
         st.markdown("### 📋 Dữ liệu mẫu (Top 10 dòng)")
         st.dataframe(df_filtered.head(10), width="stretch")
+        csv_tab1 = df_filtered.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 Tải xuống toàn bộ bảng dữ liệu đã làm sạch (CSV)",
+            data=csv_tab1,
+            file_name="cleaned_sales_data.csv",
+            mime="text/csv",
+            key="btn_download_tab1",
+            help="Tải về file dữ liệu đầy đủ đã qua làm sạch theo bộ lọc đang chọn."
+        )
 
     # =========================================================================
     # TAB 2: MACHINE LEARNING PRICING SIMULATOR (Trí)
@@ -213,6 +222,30 @@ if df is not None and not df.empty:
     # =========================================================================
     with tab3:
         render_business_report(df_filtered)
+
+    # =========================================================================
+    # FOOTER: TẢI XUỐNG DỮ LIỆU ĐÃ LÀM SẠCH (CSV EXPORT)
+    # =========================================================================
+    st.markdown("---")
+    st.subheader("📥 Tải Xuống Dữ Liệu Đã Làm Sạch (Cleaned Dataset)")
+    col_dl1, col_dl2 = st.columns([3, 1])
+    with col_dl1:
+        st.write(
+            f"Tập dữ liệu đã qua toàn bộ quy trình Data Pipeline: làm sạch lỗi, khử nhiễu, chuẩn hóa thời gian "
+            f"và bổ sung các chỉ số tính toán (`profit`, `profit_margin`, `day_of_week`...). "
+            f"Hiện có **{len(df_filtered):,}** dòng dữ liệu sẵn sàng sử dụng."
+        )
+    with col_dl2:
+        csv_export = df_filtered.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            label="📥 Tải File CSV Sạch",
+            data=csv_export,
+            file_name="cleaned_sales_data.csv",
+            mime="text/csv",
+            type="primary",
+            use_container_width=True,
+            help="Tải về file dữ liệu đã được làm sạch hoàn chỉnh."
+        )
 
 else:
     st.warning("⚠️ Chưa tìm thấy dữ liệu trong Database. Vui lòng kiểm tra file `data/data.db` hoặc chạy `src/pipeline.py`!")
