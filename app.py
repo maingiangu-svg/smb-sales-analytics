@@ -12,7 +12,7 @@ from src.eda import (
     plot_sales_over_time,
     plot_top_subcategories,
 )
-from src.model import load_or_train_model, optimize_discount
+from src.model import load_or_train_model, forecast_future_sales, prepare_time_series_data
 from src.stats import render_streamlit as render_stats
 
 st.set_page_config(
@@ -64,7 +64,7 @@ if df is not None and not df.empty:
     # Khai báo đầy đủ 3 Tab tích hợp công việc của cả 4 thành viên
     tab1, tab2, tab3 = st.tabs([
         "📊 Analytics & Insights", 
-        "🤖 Pricing Simulator (ML)", 
+        "🤖 Sales Forecasting (Time Series)", 
         "📑 Business Report"
     ])
 
@@ -112,101 +112,108 @@ if df is not None and not df.empty:
         st.dataframe(df_filtered.head(10), width="stretch")
 
     # =========================================================================
-    # TAB 2: MACHINE LEARNING PRICING SIMULATOR (Trí)
+    # TAB 2: MACHINE LEARNING SALES FORECASTING (Trí)
     # =========================================================================
     with tab2:
-        st.subheader("💡 Gợi Ý Mức Chiết Khấu Tối Ưu Lợi Nhuận (Machine Learning)")
-        st.write("Hệ thống sử dụng mô hình Machine Learning **RandomForestRegressor** được huấn luyện trên dữ liệu doanh số để mô phỏng và tìm ra mức Chiết khấu (Discount) tối đa hóa Lợi nhuận.")
+        st.subheader("💡 Dự Báo Doanh Số Tương Lai (Time Series Forecasting)")
+        st.write("Hệ thống sử dụng mô hình học máy chuỗi thời gian **Holt-Winters Exponential Smoothing** để dự báo xu hướng doanh số trong các tháng tiếp theo dựa trên dữ liệu lịch sử.")
         
         col_in1, col_in2 = st.columns([1, 2])
         with col_in1:
             st.markdown("### 🎛️ Bảng Điều Khiển Kịch Bản")
             cat_input = st.selectbox(
                 "Chọn Ngành hàng (Category):", 
-                options=categories if categories else ["Technology"]
+                options=["All"] + (categories if categories else ["Technology"])
             )
-            sales_input = st.number_input(
-                "Doanh số dự kiến ($):", 
-                min_value=10.0, 
-                value=500.0, 
-                step=10.0
+            months_input = st.slider(
+                "Số tháng dự báo tương lai:", 
+                min_value=3, 
+                max_value=12, 
+                value=6, 
+                step=1
             )
             
-            run_sim = st.button("🚀 Phân Tích & Gợi Ý Chiết Khấu Tối Ưu", width="stretch", type="primary")
+            run_sim = st.button("🚀 Chạy Dự Báo", width="stretch", type="primary")
 
         with col_in2:
             try:
-                model = load_or_train_model()
-                opt_result = optimize_discount(model, cat_input, sales_input)
+                # 1. Hiển thị dữ liệu lịch sử
+                ts_hist = prepare_time_series_data(df, freq='ME', category=cat_input)
                 
-                sim_df = opt_result['simulation_df']
-                opt_discount_pct = opt_result['optimal_discount_pct']
-                max_profit = opt_result['max_profit']
-                profit_margin = opt_result['profit_margin_pct']
+                # 2. Load model and predict
+                import plotly.graph_objects as go
                 
-                st.markdown("### 🎯 Kết Quả Mô Phỏng & Gợi Ý")
-                m_col1, m_col2, m_col3 = st.columns(3)
-                m_col1.metric("Chiết Khấu Tối Ưu", f"{opt_discount_pct:.1f}%")
-                m_col2.metric("Lợi Nhuận Dự Báo Tối Đa", f"${max_profit:,.2f}")
-                m_col3.metric("Tỷ Lệ Lợi Nhuận (Margin)", f"{profit_margin:.1f}%")
-                
-                st.markdown("---")
-                st.markdown("#### 📈 Đường Cong Lợi Nhuận Theo Mức Chiết Khấu (Profit vs Discount Curve)")
-                
-                sim_df_plot = sim_df.copy()
-                sim_df_plot['discount_pct'] = sim_df_plot['discount'] * 100
-                
-                fig_curve = px.line(
-                    sim_df_plot,
-                    x='discount_pct',
-                    y='predicted_profit',
-                    title=f"Mô phỏng Lợi nhuận ngành [{cat_input}] ở mức Doanh số ${sales_input:,.2f}",
-                    labels={'discount_pct': 'Tỷ lệ Chiết khấu (%)', 'predicted_profit': 'Lợi nhuận dự báo ($)'}
-                )
-                
-                fig_curve.add_scatter(
-                    x=[opt_discount_pct],
-                    y=[max_profit],
-                    mode='markers+text',
-                    marker=dict(size=14, color='red', symbol='star'),
-                    text=[f"Đỉnh Lợi Nhuận: {opt_discount_pct}% (${max_profit:,.2f})"],
-                    textposition="top center",
-                    name="Mức tối ưu"
-                )
-                fig_curve.update_layout(template='plotly_white')
-                st.plotly_chart(fig_curve, width="stretch")
-                
-                st.markdown("#### ⚖️ Bảng So Sánh Kịch Bản Chiết Khấu")
-                baseline_row = sim_df.loc[sim_df['discount'] == 0.0].iloc[0]
-                std_row = sim_df.loc[(sim_df['discount'] - 0.15).abs().idxmin()]
-                
-                scenario_df = pd.DataFrame([
-                    {
-                        "Kịch Bản": "Không Chiết Khấu (0%)",
-                        "Mức Chiết Khấu (%)": "0.0%",
-                        "Lợi Nhuận Dự Báo ($)": f"${baseline_row['predicted_profit']:,.2f}",
-                        "Biên Lợi Nhuận (%)": f"{baseline_row['margin_pct']:.1f}%",
-                        "Chênh Lệch So Với 0%": "$0.00"
-                    },
-                    {
-                        "Kịch Bản": "Mặc Định Ngành (15%)",
-                        "Mức Chiết Khấu (%)": "15.0%",
-                        "Lợi Nhuận Dự Báo ($)": f"${std_row['predicted_profit']:,.2f}",
-                        "Biên Lợi Nhuận (%)": f"{std_row['margin_pct']:.1f}%",
-                        "Chênh Lệch So Với 0%": f"${std_row['predicted_profit'] - baseline_row['predicted_profit']:+,.2f}"
-                    },
-                    {
-                        "Kịch Bản": "⭐ Gợi Ý Tối Ưu ML",
-                        "Mức Chiết Khấu (%)": f"{opt_discount_pct:.1f}%",
-                        "Lợi Nhuận Dự Báo ($)": f"${max_profit:,.2f}",
-                        "Biên Lợi Nhuận (%)": f"{profit_margin:.1f}%",
-                        "Chênh Lệch So Với 0%": f"${max_profit - baseline_row['predicted_profit']:+,.2f}"
-                    }
-                ])
-                st.dataframe(scenario_df, width="stretch", hide_index=True)
+                if not ts_hist.empty and len(ts_hist) >= 6:
+                    # Train model dynamically for the specific category if needed, 
+                    # or just load the base model if 'All'
+                    from src.model import train_forecast_model
+                    model, metrics = train_forecast_model(df, category=cat_input)
+                    
+                    forecast_df = forecast_future_sales(model, steps=months_input)
+                    
+                    st.markdown("### 🎯 Kết Quả Đánh Giá & Dự Báo")
+                    m_col1, m_col2, m_col3 = st.columns(3)
+                    
+                    total_forecast = forecast_df['predicted_sales'].sum()
+                    avg_forecast = forecast_df['predicted_sales'].mean()
+                    
+                    m_col1.metric("Tổng Doanh Số Dự Báo", f"${total_forecast:,.2f}")
+                    m_col2.metric("Trung bình / Tháng", f"${avg_forecast:,.2f}")
+                    m_col3.metric("Sai Số (MAE)", f"${metrics['mae']:,.2f}")
+                    
+                    st.markdown("---")
+                    st.markdown(f"#### 📈 Biểu đồ Lịch sử và Dự báo Doanh số ({cat_input})")
+                    
+                    fig_ts = go.Figure()
+                    
+                    # Dữ liệu lịch sử
+                    fig_ts.add_trace(go.Scatter(
+                        x=ts_hist.index,
+                        y=ts_hist['sales'],
+                        mode='lines+markers',
+                        name='Thực tế (Historical)',
+                        line=dict(color='royalblue', width=2)
+                    ))
+                    
+                    # Dữ liệu dự báo
+                    # Nối điểm cuối cùng của lịch sử với điểm đầu của dự báo để không đứt đoạn
+                    last_hist_date = ts_hist.index[-1]
+                    last_hist_val = ts_hist['sales'].iloc[-1]
+                    
+                    forecast_dates = [last_hist_date] + list(forecast_df['forecast_date'])
+                    forecast_vals = [last_hist_val] + list(forecast_df['predicted_sales'])
+                    
+                    fig_ts.add_trace(go.Scatter(
+                        x=forecast_dates,
+                        y=forecast_vals,
+                        mode='lines+markers',
+                        name='Dự báo (Forecast)',
+                        line=dict(color='red', width=2, dash='dash')
+                    ))
+                    
+                    fig_ts.update_layout(
+                        template='plotly_white',
+                        xaxis_title="Thời gian",
+                        yaxis_title="Doanh số ($)",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                    )
+                    
+                    st.plotly_chart(fig_ts, width="stretch")
+                    
+                    st.markdown("#### ⚖️ Bảng Dữ Liệu Tương Lai")
+                    st.dataframe(
+                        forecast_df.rename(columns={
+                            'forecast_date': 'Tháng',
+                            'predicted_sales': 'Doanh số dự báo ($)'
+                        }).style.format({'Doanh số dự báo ($)': "${:,.2f}"}),
+                        width="stretch"
+                    )
+                    
+                else:
+                    st.warning(f"⚠️ Dữ liệu lịch sử cho danh mục {cat_input} quá ít (dưới 6 tháng), không đủ để chạy thuật toán Time Series.")
                 
             except Exception as e:
-                st.error(f"⚠️ Lỗi khi mô phỏng mô hình ML: {e}")
+                st.error(f"⚠️ Lỗi khi chạy mô hình dự báo Time Series: {e}")
 
     # =========================================================================
     # TAB 3: BUSINESS REPORT (Mạnh)

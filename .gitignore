@@ -2,8 +2,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .venv/
-data/*.db
-data/*.xlsx
-*.csv
 venv/
 .vscode/
+.idea/
+env/

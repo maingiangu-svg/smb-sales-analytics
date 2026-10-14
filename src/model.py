@@ -1,162 +1,166 @@
 import os
 import sqlite3
+import warnings
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-
-from sklearn.model_selection import train_test_split
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+warnings.filterwarnings("ignore")
 
 DB_PATH = os.path.join("data", "data.db")
-MODEL_PATH = os.path.join("data", "pricing_model.joblib")
+FORECAST_MODEL_PATH = os.path.join("data", "sales_forecast_model.joblib")
+PRICING_MODEL_PATH = os.path.join("data", "pricing_model.joblib")
 
-def prepare_features(df):
-    """
-    Chuẩn hóa và trích xuất đặc trưng cho mô hình ML.
-    """
-    df_clean = df.copy()
-    
-    # Đảm bảo các cột cần thiết tồn tại
-    if 'category' not in df_clean.columns:
-        df_clean['category'] = 'General'
-    if 'sales' not in df_clean.columns:
-        df_clean['sales'] = 0.0
-    if 'discount' not in df_clean.columns:
-        df_clean['discount'] = 0.0
-    if 'quantity' not in df_clean.columns:
-        df_clean['quantity'] = 1.0
-    if 'profit' not in df_clean.columns:
-        df_clean['profit'] = 0.0
-        
-    # Thêm biến tương tác (Feature Interaction)
-    df_clean['sales_x_discount'] = df_clean['sales'] * df_clean['discount']
-    
-    return df_clean
 
-def build_model_pipeline():
-    """
-    Xây dựng Pipeline Scikit-Learn gồm tiền xử lý và thuật toán Random Forest.
-    """
-    categorical_features = ['category']
-    numeric_features = ['sales', 'discount', 'quantity', 'sales_x_discount']
-    
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_features),
-            ('num', StandardScaler(), numeric_features)
-        ]
-    )
-    
-    pipeline = Pipeline(steps=[
-        ('preprocessor', preprocessor),
-        ('regressor', RandomForestRegressor(n_estimators=100, max_depth=12, random_state=42, min_samples_leaf=2))
-    ])
-    
-    return pipeline
+def _month_end_freq():
+    try:
+        pd.tseries.frequencies.to_offset("ME")
+        return "ME"
+    except Exception:
+        return "M"
 
-def train_pricing_model(df=None, model_path=MODEL_PATH):
-    """
-    Huấn luyện mô hình dự báo Lợi nhuận và lưu ra file joblib.
-    """
+
+# ==============================================================================
+# 1. TIME SERIES FORECASTING (HOLT-WINTERS)
+# ==============================================================================
+def prepare_time_series_data(df, freq=None, category=None):
+    if freq is None or freq == "ME":
+        freq = _month_end_freq()
+    df_ts = df.copy()
+    if category and category != "All" and "category" in df_ts.columns:
+        df_ts = df_ts[df_ts["category"] == category]
+
+    df_ts["order_date"] = pd.to_datetime(df_ts["order_date"], errors="coerce")
+    df_ts = df_ts.dropna(subset=["order_date"]).sort_values("order_date")
+
+    ts_data = df_ts.groupby(pd.Grouper(key="order_date", freq=freq))["sales"].sum().reset_index()
+    ts_data = ts_data.set_index("order_date").asfreq(freq, fill_value=0.0)
+    return ts_data
+
+
+def train_forecast_model(df=None, model_path=FORECAST_MODEL_PATH, category=None):
     if df is None:
-        if not os.path.exists(DB_PATH):
-            raise FileNotFoundError(f"Không tìm thấy Database tại {DB_PATH}. Hãy chạy src/pipeline.py trước!")
-        conn = sqlite3.connect(DB_PATH)
-        df = pd.read_sql("SELECT * FROM sales_data", conn)
-        conn.close()
-        
-    if df.empty:
-        raise ValueError("Dữ liệu rỗng, không thể huấn luyện mô hình!")
-        
-    df_prepared = prepare_features(df)
-    
-    feature_cols = ['category', 'sales', 'discount', 'quantity', 'sales_x_discount']
-    X = df_prepared[feature_cols]
-    y = df_prepared['profit']
-    
-    # Train / Test Split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    
-    pipeline = build_model_pipeline()
-    pipeline.fit(X_train, y_train)
-    
-    # Đánh giá mô hình
-    y_pred = pipeline.predict(X_test)
-    r2 = r2_score(y_test, y_pred)
-    mae = mean_absolute_error(y_test, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    
-    metrics = {
-        "r2_score": round(float(r2), 4),
-        "mae": round(float(mae), 2),
-        "rmse": round(float(rmse), 2),
-        "num_samples": len(df_prepared)
-    }
-    
-    # Lưu mô hình
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    joblib.dump(pipeline, model_path)
-    
-    print(f"[OK] Da huan luyen va luu mo hinh thanh cong tai `{model_path}`!")
-    print(f"[METRICS] Ket qua danh gia: R2 = {metrics['r2_score']}, MAE = ${metrics['mae']}, RMSE = ${metrics['rmse']}")
-    
-    return pipeline, metrics
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql("SELECT * FROM sales_data", conn)
 
-def load_or_train_model(model_path=MODEL_PATH, db_path=DB_PATH):
-    """
-    Tải mô hình đã lưu hoặc tự động huấn luyện mới nếu chưa có.
-    """
-    if os.path.exists(model_path):
-        try:
-            pipeline = joblib.load(model_path)
-            return pipeline
-        except Exception as e:
-            print(f"[WARNING] Khong the doc file model ({e}), dang huan luyen lai...")
-            
-    pipeline, _ = train_pricing_model(model_path=model_path)
-    return pipeline
+    ts_data = prepare_time_series_data(df, category=category)
+    test_size = min(3, max(1, len(ts_data) // 4))
+    train, test = ts_data.iloc[:-test_size], ts_data.iloc[-test_size:]
 
-def optimize_discount(model, category, expected_sales, max_discount=0.50, num_steps=51):
-    """
-    Mô phỏng 51 mức chiết khấu từ 0% đến 50% để tìm mức chiết khấu tối ưu lợi nhuận.
-    """
-    discount_grid = np.linspace(0.0, max_discount, num_steps)
-    
-    sim_data = pd.DataFrame({
-        'category': [category] * num_steps,
-        'sales': [expected_sales] * num_steps,
-        'discount': discount_grid,
-        'quantity': [1.0] * num_steps,
-        'sales_x_discount': expected_sales * discount_grid
+    # Với dữ liệu 12 tháng (train = 9 tháng), sử dụng chu kỳ Quý (seasonal_periods=4)
+    seasonal_periods = 4 if len(train) >= 8 else max(2, len(train) // 2)
+    try:
+        model = ExponentialSmoothing(
+            train["sales"], trend="add", seasonal="add",
+            seasonal_periods=seasonal_periods, initialization_method="estimated"
+        ).fit()
+        preds = model.forecast(len(test))
+        final_model = ExponentialSmoothing(
+            ts_data["sales"], trend="add", seasonal="add",
+            seasonal_periods=seasonal_periods, initialization_method="estimated"
+        ).fit()
+    except Exception:
+        model = ExponentialSmoothing(train["sales"], trend="add", seasonal=None).fit()
+        preds = model.forecast(len(test))
+        final_model = ExponentialSmoothing(ts_data["sales"], trend="add", seasonal=None).fit()
+
+    mae = mean_absolute_error(test["sales"], preds)
+    rmse = np.sqrt(mean_squared_error(test["sales"], preds))
+    metrics = {"mae": round(float(mae), 2), "rmse": round(float(rmse), 2), "num_months": len(ts_data)}
+
+    if not category or category == "All":
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        joblib.dump(final_model, model_path)
+
+    return final_model, metrics
+
+
+def forecast_future_sales(model, steps=6):
+    forecast = model.forecast(steps)
+    return pd.DataFrame({
+        "forecast_date": forecast.index,
+        "predicted_sales": np.maximum(0, forecast.values).round(2)
     })
-    
-    # Dự báo Lợi nhuận cho từng mức chiết khấu
-    predicted_profits = model.predict(sim_data)
-    sim_data['predicted_profit'] = predicted_profits
-    sim_data['margin_pct'] = np.where(
-        expected_sales > 0, 
-        (sim_data['predicted_profit'] / expected_sales) * 100, 
-        0.0
-    )
-    
-    # Tìm mức chiết khấu có lợi nhuận tối đa
-    best_idx = sim_data['predicted_profit'].idxmax()
-    best_row = sim_data.loc[best_idx]
-    
-    result = {
-        'optimal_discount': float(best_row['discount']),
-        'optimal_discount_pct': round(float(best_row['discount']) * 100, 1),
-        'max_profit': float(best_row['predicted_profit']),
-        'profit_margin_pct': float(best_row['margin_pct']),
-        'simulation_df': sim_data
+
+
+# ==============================================================================
+# 2. PRICING OPTIMIZATION (BASELINE LR vs ADVANCED RANDOM FOREST)
+# ==============================================================================
+def train_pricing_models(df=None, model_path=PRICING_MODEL_PATH):
+    if df is None:
+        with sqlite3.connect(DB_PATH) as conn:
+            df = pd.read_sql("SELECT * FROM sales_data", conn)
+
+    # Baseline: Linear Regression
+    X_base = df[["sales", "discount"]].fillna(0)
+    y = df["profit"].fillna(0)
+    Xb_tr, Xb_te, yb_tr, yb_te = train_test_split(X_base, y, test_size=0.2, random_state=42)
+    lr = LinearRegression().fit(Xb_tr, yb_tr)
+    yb_pred = lr.predict(Xb_te)
+
+    # Advanced: Random Forest với Category Encoding
+    X_adv = pd.get_dummies(df[["sales", "discount", "category"]], drop_first=False)
+    Xa_tr, Xa_te, ya_tr, ya_te = train_test_split(X_adv, y, test_size=0.2, random_state=42)
+    rf = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42).fit(Xa_tr, ya_tr)
+    ya_pred = rf.predict(Xa_te)
+
+    bundle = {
+        "model": rf,
+        "features": list(X_adv.columns),
+        "baseline_metrics": {
+            "r2": round(float(r2_score(yb_te, yb_pred)), 4),
+            "mae": round(float(mean_absolute_error(yb_te, yb_pred)), 2),
+            "rmse": round(float(np.sqrt(mean_squared_error(yb_te, yb_pred))), 2)
+        },
+        "advanced_metrics": {
+            "r2": round(float(r2_score(ya_te, ya_pred)), 4),
+            "mae": round(float(mean_absolute_error(ya_te, ya_pred)), 2),
+            "rmse": round(float(np.sqrt(mean_squared_error(ya_te, ya_pred))), 2)
+        }
     }
-    
-    return result
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    joblib.dump(bundle, model_path)
+    return bundle
+
+
+def optimize_discount(category: str, target_sales: float, model_path=PRICING_MODEL_PATH):
+    bundle = joblib.load(model_path) if os.path.exists(model_path) else train_pricing_models(model_path=model_path)
+    rf = bundle["model"]
+    feat_cols = bundle["features"]
+
+    discounts = np.linspace(0.0, 0.35, 36).round(2)
+    sim_df = pd.DataFrame({"sales": target_sales, "discount": discounts, "category": category})
+    sim_encoded = pd.get_dummies(sim_df, drop_first=False)
+    for col in feat_cols:
+        if col not in sim_encoded.columns:
+            sim_encoded[col] = 0
+    sim_encoded = sim_encoded[feat_cols]
+
+    sim_df["predicted_profit"] = rf.predict(sim_encoded).round(2)
+    best_row = sim_df.loc[sim_df["predicted_profit"].idxmax()]
+    return {
+        "best_discount": float(best_row["discount"]),
+        "max_profit": float(best_row["predicted_profit"]),
+        "curve": sim_df[["discount", "predicted_profit"]],
+        "metrics": bundle["advanced_metrics"]
+    }
+
+
+def load_or_train_model(model_path=FORECAST_MODEL_PATH, db_path=DB_PATH):
+    if os.path.exists(model_path):
+        return joblib.load(model_path)
+    model, _ = train_forecast_model(model_path=model_path)
+    return model
+
 
 if __name__ == "__main__":
-    print("[INFO] Dang chay script huan luyen mo hinh Machine Learning doc lap...")
-    train_pricing_model()
+    _, ts_m = train_forecast_model()
+    p_bundle = train_pricing_models()
+    print(f"✅ Time Series Holt-Winters: MAE = ${ts_m['mae']}, RMSE = ${ts_m['rmse']}")
+    print(f"✅ Baseline Linear Regression: {p_bundle['baseline_metrics']}")
+    print(f"✅ Advanced Random Forest:     {p_bundle['advanced_metrics']}")

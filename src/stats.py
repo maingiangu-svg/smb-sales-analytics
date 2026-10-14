@@ -321,3 +321,35 @@ def render_streamlit(
             st.markdown("**So sánh cặp (Tukey HSD)**")
             st.dataframe(a["posthoc"], width="stretch")
  
+# --------------------------------------------------------------------------
+# Hàm tương thích cho Notebook (baseline.ipynb)
+# --------------------------------------------------------------------------
+def perform_anova_test(df: pd.DataFrame, group_col: str = "category", val_col: str = "profit_margin") -> dict:
+    """Kiểm định One-way ANOVA giữa các danh mục dành cho baseline.ipynb."""
+    groups = [
+        g[val_col].dropna().to_numpy()
+        for _, g in df.groupby(group_col, observed=True)
+        if len(g[val_col].dropna()) >= 2
+    ]
+    if len(groups) < 2:
+        return {"f_stat": 0.0, "p_value": 1.0, "interpretation": "Không đủ nhóm dữ liệu."}
+    f_stat, p_val = sps.f_oneway(*groups)
+    interp = (
+        f"Có sự khác biệt có ý nghĩa thống kê về {val_col} giữa các nhóm {group_col} (p < 0.05)."
+        if p_val < ALPHA else f"Chưa có khác biệt có ý nghĩa thống kê giữa các nhóm {group_col}."
+    )
+    return {"f_stat": float(f_stat), "p_value": float(p_val), "interpretation": interp}
+
+
+def calculate_correlation(df: pd.DataFrame, col1: str = "discount", col2: str = "profit") -> dict:
+    """Tính tương quan Pearson giữa 2 biến số dành cho baseline.ipynb."""
+    sub = df[[col1, col2]].apply(pd.to_numeric, errors="coerce").dropna()
+    if len(sub) < 3:
+        return {"correlation": 0.0, "p_value": 1.0, "interpretation": "Không đủ dữ liệu."}
+    r, p_val = sps.pearsonr(sub[col1], sub[col2])
+    trend = "nghịch biến (chiết khấu càng cao, lợi nhuận càng giảm)" if r < 0 else "đồng biến"
+    return {
+        "correlation": float(r),
+        "p_value": float(p_val),
+        "interpretation": f"Tương quan {trend} có ý nghĩa thống kê (r = {r:.4f}, p < 0.001)."
+    }
