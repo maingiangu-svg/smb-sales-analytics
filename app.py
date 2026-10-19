@@ -5,6 +5,7 @@ import plotly.express as px
 import streamlit as st
 
 from src.business_report import render_business_report
+from src.missing_details import render_missing_details
 from src.eda import (
     plot_category_performance,
     plot_discount_vs_profit,
@@ -62,10 +63,11 @@ if df is not None and not df.empty:
         df_filtered = df.copy()
 
     # Khai báo đầy đủ 3 Tab tích hợp công việc của cả 4 thành viên
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "📊 Analytics & Insights", 
         "🤖 Sales Forecasting (Time Series)", 
-        "📑 Business Report"
+        "📑 Business Report",
+        "🔍 Missing Data Details"
     ])
 
     # =========================================================================
@@ -220,6 +222,12 @@ if df is not None and not df.empty:
     # =========================================================================
     with tab3:
         render_business_report(df_filtered)
+
+    # =========================================================================
+    # TAB 4: MISSING DATA DETAILS
+    # =========================================================================
+    with tab4:
+        render_missing_details()
 
 else:
     st.warning("⚠️ Chưa tìm thấy dữ liệu trong Database. Vui lòng kiểm tra file `data/data.db` hoặc chạy `src/pipeline.py`!")
