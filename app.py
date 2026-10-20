@@ -6,6 +6,7 @@ import streamlit as st
 
 from src.business_report import render_business_report
 from src.missing_details import render_missing_details
+from src.outlier_noise_details import render_outlier_noise_details
 from src.eda import (
     plot_category_performance,
     plot_discount_vs_profit,
@@ -62,39 +63,70 @@ if df is not None and not df.empty:
     else:
         df_filtered = df.copy()
 
-    # Khai báo đầy đủ 3 Tab tích hợp công việc của cả 4 thành viên
-    tab1, tab2, tab3, tab4 = st.tabs([
+    # Khai báo đầy đủ 5 Tab tích hợp toàn diện phân tích và chất lượng dữ liệu
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Analytics & Insights", 
         "🤖 Sales Forecasting (Time Series)", 
         "📑 Business Report",
-        "🔍 Missing Data Details"
+        "🔍 Missing Data Details",
+        "🎯 Outlier & Noise Details"
     ])
 
     # =========================================================================
     # TAB 1: EDA (An) & STATISTICAL TESTING (Đức)
     # =========================================================================
     with tab1:
+        # --- Khối xuất file dữ liệu đã làm sạch ---
+        col_export_info, col_export_btn = st.columns([3, 1])
+        with col_export_info:
+            st.markdown("#### 📥 Xuất File Dữ Liệu Đã Làm Sạch")
+            st.caption(f"Tập dữ liệu đã chuẩn hóa qua 6 bước tiền xử lý & làm sạch (Hiện có **{len(df_filtered):,}** dòng sẵn sàng trích xuất).")
+        with col_export_btn:
+            csv_bytes = df_filtered.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Xuất file đã sạch (CSV)",
+                data=csv_bytes,
+                file_name="cleaned_cafe_sales.csv",
+                mime="text/csv",
+                type="primary",
+                use_container_width=True,
+                help="Tải xuống tập dữ liệu cleaned_cafe_sales.csv đã xử lý khuyết thiếu, nhiễu và ngoại lai"
+            )
+        st.markdown("---")
+
         total_sales = df_filtered['sales'].sum() if 'sales' in df_filtered.columns else 0.0
-        total_profit = df_filtered['profit'].sum() if 'profit' in df_filtered.columns else 0.0
         total_orders = df_filtered['order_id'].nunique() if 'order_id' in df_filtered.columns else len(df_filtered)
-        avg_discount = (df_filtered['discount'].mean() * 100) if 'discount' in df_filtered.columns else 0.0
+        total_qty = df_filtered['quantity'].sum() if 'quantity' in df_filtered.columns else 0.0
+        avg_order_value = (total_sales / total_orders) if total_orders > 0 else 0.0
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Tổng Doanh Thu", f"${total_sales:,.2f}")
-        col2.metric("Tổng Lợi Nhuận", f"${total_profit:,.2f}")
-        col3.metric("Tổng Số Đơn Hàng", f"{total_orders:,}")
-        col4.metric("Chiết Khấu TB", f"{avg_discount:.1f}%")
+        col2.metric("Tổng Số Đơn Hàng", f"{total_orders:,}")
+        col3.metric("Tổng Sản Phẩm Đã Bán", f"{int(total_qty):,}")
+        col4.metric("Giá Trị Đơn TB (AOV)", f"${avg_order_value:,.2f}")
         
         st.markdown("---")
         
-        st.subheader("📈 Phân tích Doanh thu & Lợi nhuận")
+        st.subheader("📈 Phân tích Xu hướng & Hiệu suất Doanh thu")
         st.plotly_chart(plot_sales_over_time(df_filtered), width="stretch")
         
         col_left, col_right = st.columns(2)
         with col_left:
             st.plotly_chart(plot_category_performance(df_filtered), width="stretch")
         with col_right:
-            st.plotly_chart(plot_discount_vs_profit(df_filtered), width="stretch")
+            if 'payment_method' in df_filtered.columns:
+                import plotly.express as px
+                fig_pm = px.pie(
+                    df_filtered, 
+                    names='payment_method', 
+                    values='sales', 
+                    title='💳 Tỷ trọng Doanh thu theo Phương thức Thanh toán',
+                    hole=0.4
+                )
+                fig_pm.update_layout(template='plotly_white')
+                st.plotly_chart(fig_pm, width="stretch")
+            else:
+                st.plotly_chart(plot_discount_vs_profit(df_filtered), width="stretch")
 
         col_eda1, col_eda2 = st.columns(2)
         with col_eda1:
@@ -104,10 +136,10 @@ if df is not None and not df.empty:
             fig_heat = plot_sales_heatmap(df_filtered)
             st.plotly_chart(fig_heat, width="stretch")
 
-        st.markdown("---")
-        
-        # Phân hệ Kiểm định thống kê của Đức
-        render_stats(df_filtered, discount_col='discount', profit_col='profit')
+        # Phân hệ Kiểm định thống kê (chỉ kích hoạt nếu có trường chiết khấu & lợi nhuận)
+        if 'discount' in df_filtered.columns and 'profit' in df_filtered.columns:
+            st.markdown("---")
+            render_stats(df_filtered, discount_col='discount', profit_col='profit')
 
         st.markdown("---")
         st.markdown("### 📋 Dữ liệu mẫu (Top 10 dòng)")
@@ -228,6 +260,12 @@ if df is not None and not df.empty:
     # =========================================================================
     with tab4:
         render_missing_details()
+
+    # =========================================================================
+    # TAB 5: OUTLIER & NOISE DETAILS
+    # =========================================================================
+    with tab5:
+        render_outlier_noise_details()
 
 else:
     st.warning("⚠️ Chưa tìm thấy dữ liệu trong Database. Vui lòng kiểm tra file `data/data.db` hoặc chạy `src/pipeline.py`!")
