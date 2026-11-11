@@ -6,14 +6,14 @@ def plot_sales_over_time(df):
     cols = [c for c in ['sales', 'profit'] if c in df.columns]
     if not cols or 'order_date' not in df.columns:
         return px.line(title="⚠️ Thiếu dữ liệu thời gian")
-    
+
     # 1. Tạo bản sao để tránh chỉnh sửa df gốc
     df_temp = df.copy()
-    
+
     # 2. Ép kiểu datetime cho order_date (xử lý triệt để lỗi TypeError)
     df_temp['order_date'] = pd.to_datetime(df_temp['order_date'], errors='coerce')
     df_temp = df_temp.dropna(subset=['order_date'])
-    
+
     if df_temp.empty:
         return px.line(title="⚠️ Không có dữ liệu thời gian hợp lệ")
 
@@ -24,10 +24,10 @@ def plot_sales_over_time(df):
         .sum()
         .reset_index()
     )
-    
+
     fig = px.line(
-        df_monthly, 
-        x='order_date', 
+        df_monthly,
+        x='order_date',
         y=cols if len(cols) > 1 else cols[0],
         title='📈 Xu hướng Doanh thu & Lợi nhuận hàng tháng',
         labels={'value': 'USD ($)', 'order_date': 'Thời gian', 'variable': 'Chỉ số'}
@@ -38,14 +38,14 @@ def plot_category_performance(df):
     """Biểu đồ Doanh thu & Lợi nhuận theo Danh mục sản phẩm (Category)"""
     cols = [c for c in ['sales', 'profit'] if c in df.columns]
     cat_col = 'category' if 'category' in df.columns else None
-    
+
     if not cat_col or not cols:
         return px.bar(title="⚠️ Không tìm thấy dữ liệu Danh mục")
-        
+
     df_cat = df.groupby(cat_col)[cols].sum().reset_index()
     fig = px.bar(
-        df_cat, 
-        x=cat_col, 
+        df_cat,
+        x=cat_col,
         y=cols if len(cols) > 1 else cols[0],
         barmode='group',
         title='📦 Doanh thu & Lợi nhuận theo Danh mục',
@@ -55,27 +55,19 @@ def plot_category_performance(df):
     return fig
 
 def plot_discount_vs_profit(df):
-    """Boxplot: Phân bổ Doanh thu Đơn hàng qua 12 Tháng trong năm"""
-    if 'month' not in df.columns or 'sales' not in df.columns:
-        return px.box(title="⚠️ Thiếu dữ liệu Month hoặc Sales để vẽ Boxplot")
-    
-    df_temp = df.copy()
-    if 'category' in df_temp.columns:
-        df_temp = df_temp[df_temp['category'] != 'Unknown']
-        
-    df_temp['month_name'] = df_temp['month'].apply(lambda m: f"Tháng {int(m)}")
-    month_order = [f"Tháng {i}" for i in range(1, 13)]
-    
-    fig = px.box(
-        df_temp, 
-        x='month_name', 
-        y='sales', 
-        color='month_name',
-        category_orders={'month_name': month_order},
-        title='📅 Phân bổ Doanh thu Đơn hàng qua 12 Tháng trong năm',
-        labels={'month_name': 'Tháng giao dịch', 'sales': 'Doanh số ($)'}
+    """Scatter Plot: Tác động của Chiết khấu (Discount) tới Lợi nhuận (Profit)"""
+    if 'discount' not in df.columns or 'profit' not in df.columns:
+        return px.scatter(title="⚠️ Thiếu dữ liệu Discount hoặc Profit để vẽ Scatter Plot")
+
+    fig = px.scatter(
+        df,
+        x='discount',
+        y='profit',
+        color='category' if 'category' in df.columns else None,
+        title='🎯 Mối quan hệ giữa Mức Chiết Khấu & Lợi Nhuận',
+        labels={'discount': 'Tỷ lệ chiết khấu (%)', 'profit': 'Lợi nhuận ($)'}
     )
-    fig.update_layout(template='plotly_white', showlegend=False)
+    fig.update_layout(template='plotly_white')
     return fig
 
 #issue #2
@@ -88,42 +80,44 @@ def plot_discount_vs_profit(df):
 # Thêm fallback check dữ liệu đầu vào (tránh crash khi lọc dataframe rỗng).
 
 def plot_top_subcategories(df, top_n=10):
+
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return px.bar(title="⚠️ Không có dữ liệu để hiển thị (dataframe rỗng)")
 
     subcat_col = next(
-        (c for c in ['category', 'sub_category', 'subcategory', 'sub-category'] if c in df.columns),
+        (c for c in ['sub_category', 'subcategory', 'sub-category', 'category'] if c in df.columns),
         None
     )
 
-    if not subcat_col or 'sales' not in df.columns:
-        return px.bar(title="⚠️ Thiếu dữ liệu Danh mục hoặc Doanh thu (Sales)")
+    metric_col = 'profit' if 'profit' in df.columns else 'sales'
+    metric_label = 'Lợi nhuận ($)' if metric_col == 'profit' else 'Doanh thu ($)'
 
-    df_filtered = df[df[subcat_col] != 'Unknown'] if subcat_col in df.columns else df
+    if not subcat_col or metric_col not in df.columns:
+        return px.bar(title="⚠️ Thiếu dữ liệu phân loại hoặc doanh số")
 
     df_sub = (
-        df_filtered.groupby(subcat_col, dropna=True)['sales']
+        df.groupby(subcat_col, dropna=True)[metric_col]
         .sum()
         .reset_index()
-        .sort_values('sales', ascending=False)
+        .sort_values(metric_col, ascending=False)
         .head(top_n)
     )
 
     if df_sub.empty:
-        return px.bar(title="⚠️ Không có dữ liệu Danh mục để hiển thị")
+        return px.bar(title="⚠️ Không có dữ liệu để hiển thị")
 
     # Sắp tăng dần để khi vẽ orientation='h', mục cao nhất nằm trên cùng
-    df_sub = df_sub.sort_values('sales', ascending=True)
+    df_sub = df_sub.sort_values(metric_col, ascending=True)
 
     fig = px.bar(
         df_sub,
-        x='sales',
+        x=metric_col,
         y=subcat_col,
         orientation='h',
-        color='sales',
+        color=metric_col,
         color_continuous_scale='Viridis',
-        title=f'🏆 Top {len(df_sub)} Danh mục theo Doanh thu',
-        labels={'sales': 'Doanh thu ($)', subcat_col: 'Danh mục'}
+        title=f'🏆 Top {len(df_sub)} Danh mục theo {metric_label}',
+        labels={metric_col: metric_label, subcat_col: 'Danh mục'}
     )
     fig.update_layout(template='plotly_white', coloraxis_showscale=False)
     return fig
@@ -178,4 +172,3 @@ def plot_sales_heatmap(df):
     )
     fig.update_layout(template='plotly_white')
     return fig
- 
