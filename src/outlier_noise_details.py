@@ -157,8 +157,8 @@ def render_outlier_noise_details(file_path: str = DEFAULT_RAW_FILE):
     c2.metric("Tổng Điểm Ngoại Lai (Outliers)", f"{kpis['total_outliers']:,} điểm", "2 loại thống kê chuẩn")
     c3.metric("Tổng Điểm Nhiễu (Noise)", f"{kpis['total_noise']:,} điểm", "2 loại phát hiện")
     c4.metric(
-        "Dòng Bị Ảnh Hưởng",
-        f"{kpis['affected_rows']:,}",
+        "Dòng Bị Ảnh Hưởng", 
+        f"{kpis['affected_rows']:,}", 
         f"{kpis['pct_affected_rows']}% tổng dòng",
         delta_color="inverse"
     )

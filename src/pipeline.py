@@ -79,7 +79,7 @@ def step4_clean_and_cast_types(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     numeric_cols = ['sales', 'quantity', 'price_per_unit', 'cost']
-
+    
     # 1. Làm sạch ký tự hiển thị ở cột số
     for col in numeric_cols:
         if col in df.columns:
@@ -227,13 +227,13 @@ def step6_enforce_business_constraints(df: pd.DataFrame) -> pd.DataFrame:
 def clean_and_transform_data(file_path: str = DEFAULT_RAW_FILE) -> pd.DataFrame:
     """Thực thi tuần tự toàn bộ Data Pipeline từ Bước 2 đến Bước 6."""
     df_raw = pd.read_csv(file_path, keep_default_na=False) if file_path.endswith('.csv') else pd.read_excel(file_path)
-
+    
     df_s2 = step2_normalize_headers_and_schema(df_raw)
     df_s3 = step3_create_indicators(df_s2)
     df_s4 = step4_clean_and_cast_types(df_s3)
     df_s5 = step5_impute_missing_data(df_s4)
     df_s6 = step6_enforce_business_constraints(df_s5)
-
+    
     return df_s6
 
 
@@ -241,12 +241,12 @@ def run_pipeline(file_path: str = None):
     """Chạy toàn bộ pipeline, lưu CSDL SQLite và xuất file CSV sạch sẵn sàng sử dụng."""
     if file_path is None:
         file_path = DEFAULT_RAW_FILE
-
+        
     print(f"🔄 Đang thực thi Data Pipeline trên: {file_path}...")
     df_clean = clean_and_transform_data(file_path)
 
     os.makedirs("data", exist_ok=True)
-
+    
     # 1. Lưu vào Database SQLite
     with sqlite3.connect(DB_PATH) as conn:
         df_clean.to_sql(TABLE_NAME, conn, if_exists="replace", index=False)

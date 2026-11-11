@@ -6,4 +6,3 @@ venv/
 .vscode/
 .idea/
 env/
-data/retail.db

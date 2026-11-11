@@ -6,14 +6,14 @@ def plot_sales_over_time(df):
     cols = [c for c in ['sales', 'profit'] if c in df.columns]
     if not cols or 'order_date' not in df.columns:
         return px.line(title="⚠️ Thiếu dữ liệu thời gian")
-
+    
     # 1. Tạo bản sao để tránh chỉnh sửa df gốc
     df_temp = df.copy()
-
+    
     # 2. Ép kiểu datetime cho order_date (xử lý triệt để lỗi TypeError)
     df_temp['order_date'] = pd.to_datetime(df_temp['order_date'], errors='coerce')
     df_temp = df_temp.dropna(subset=['order_date'])
-
+    
     if df_temp.empty:
         return px.line(title="⚠️ Không có dữ liệu thời gian hợp lệ")
 
@@ -24,10 +24,10 @@ def plot_sales_over_time(df):
         .sum()
         .reset_index()
     )
-
+    
     fig = px.line(
-        df_monthly,
-        x='order_date',
+        df_monthly, 
+        x='order_date', 
         y=cols if len(cols) > 1 else cols[0],
         title='📈 Xu hướng Doanh thu & Lợi nhuận hàng tháng',
         labels={'value': 'USD ($)', 'order_date': 'Thời gian', 'variable': 'Chỉ số'}
@@ -38,14 +38,14 @@ def plot_category_performance(df):
     """Biểu đồ Doanh thu & Lợi nhuận theo Danh mục sản phẩm (Category)"""
     cols = [c for c in ['sales', 'profit'] if c in df.columns]
     cat_col = 'category' if 'category' in df.columns else None
-
+    
     if not cat_col or not cols:
         return px.bar(title="⚠️ Không tìm thấy dữ liệu Danh mục")
-
+        
     df_cat = df.groupby(cat_col)[cols].sum().reset_index()
     fig = px.bar(
-        df_cat,
-        x=cat_col,
+        df_cat, 
+        x=cat_col, 
         y=cols if len(cols) > 1 else cols[0],
         barmode='group',
         title='📦 Doanh thu & Lợi nhuận theo Danh mục',
@@ -58,11 +58,11 @@ def plot_discount_vs_profit(df):
     """Scatter Plot: Tác động của Chiết khấu (Discount) tới Lợi nhuận (Profit)"""
     if 'discount' not in df.columns or 'profit' not in df.columns:
         return px.scatter(title="⚠️ Thiếu dữ liệu Discount hoặc Profit để vẽ Scatter Plot")
-
+        
     fig = px.scatter(
-        df,
-        x='discount',
-        y='profit',
+        df, 
+        x='discount', 
+        y='profit', 
         color='category' if 'category' in df.columns else None,
         title='🎯 Mối quan hệ giữa Mức Chiết Khấu & Lợi Nhuận',
         labels={'discount': 'Tỷ lệ chiết khấu (%)', 'profit': 'Lợi nhuận ($)'}
@@ -80,7 +80,7 @@ def plot_discount_vs_profit(df):
 # Thêm fallback check dữ liệu đầu vào (tránh crash khi lọc dataframe rỗng).
 
 def plot_top_subcategories(df, top_n=10):
-
+ 
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return px.bar(title="⚠️ Không có dữ liệu để hiển thị (dataframe rỗng)")
 
@@ -172,3 +172,4 @@ def plot_sales_heatmap(df):
     )
     fig.update_layout(template='plotly_white')
     return fig
+ 

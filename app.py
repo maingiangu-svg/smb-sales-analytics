@@ -1,164 +1,271 @@
-"""Retail revenue and profit analysis on observed Sample Superstore data."""
-
+import os
 import sqlite3
-
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
-from src.retail_analysis import discount_regression, discount_summary, performance
-from src.retail_forecast import daily_revenue, evaluate_and_forecast
-from src.retail_pipeline import DB_PATH, RAW_PATH, TABLE, audit_raw, read_raw
+from src.business_report import render_business_report
+from src.missing_details import render_missing_details
+from src.outlier_noise_details import render_outlier_noise_details
+from src.eda import (
+    plot_category_performance,
+    plot_discount_vs_profit,
+    plot_sales_heatmap,
+    plot_sales_over_time,
+    plot_top_subcategories,
+)
+from src.model import load_or_train_model, forecast_future_sales, prepare_time_series_data
+from src.stats import render_streamlit as render_stats
 
+st.set_page_config(
+    page_title="SMB Sales Analytics & Pricing", 
+    page_icon="📊",
+    layout="wide"
+)
 
-st.set_page_config(page_title="Phân tích bán lẻ Superstore", page_icon="📊", layout="wide")
+DB_PATH = os.path.join("data", "data.db")
 
 
 @st.cache_data
-def load_retail() -> pd.DataFrame:
-    with sqlite3.connect(DB_PATH) as conn:
-        df = pd.read_sql_query(f'SELECT * FROM "{TABLE}"', conn)
-    df["order_date"] = pd.to_datetime(df["order_date"])
-    df["is_loss"] = df["is_loss"].astype(bool)
-    return df
-
-
-@st.cache_data
-def load_audit() -> dict:
-    return audit_raw(read_raw(RAW_PATH))
-
-
-@st.cache_data(show_spinner="Đang đánh giá mô hình theo từng mốc thời gian...")
-def forecast_for_scope(df: pd.DataFrame, days: int) -> dict:
-    return evaluate_and_forecast(daily_revenue(df), horizon=days)
-
-
-st.title("Phân tích doanh thu và lợi nhuận bán lẻ")
-st.caption("Sample Superstore · doanh thu, lợi nhuận và chiết khấu là số liệu có sẵn trong nguồn")
-
-if not DB_PATH.exists():
-    st.error("Chưa có cơ sở dữ liệu bán lẻ. Chạy `python3 -m src.retail_pipeline` trước.")
-    st.stop()
-
-df = load_retail()
-if df.empty:
-    st.error("Bảng giao dịch bán lẻ đang trống.")
-    st.stop()
-
-regions = sorted(df["region"].dropna().unique().tolist())
-categories = sorted(df["category"].dropna().unique().tolist())
-years = sorted(df["year"].unique().tolist())
-with st.sidebar:
-    st.header("Bộ lọc")
-    chosen_regions = st.multiselect("Khu vực", regions, default=regions)
-    chosen_categories = st.multiselect("Danh mục", categories, default=categories)
-    chosen_years = st.multiselect("Năm (phân tích)", years, default=years)
-    st.caption("Dự báo dùng toàn bộ lịch sử của khu vực và danh mục đã chọn.")
-
-scope = df[df["region"].isin(chosen_regions) & df["category"].isin(chosen_categories)]
-view = scope[scope["year"].isin(chosen_years)]
-if view.empty:
-    st.warning("Bộ lọc hiện tại không có giao dịch.")
-    st.stop()
-
-tab_overview, tab_discount, tab_forecast, tab_quality = st.tabs([
-    "Tổng quan & EDA", "Chiết khấu & hồi quy", "Dự báo theo ngày", "Chất lượng dữ liệu",
-])
-
-with tab_overview:
-    sales, profit = view["sales"].sum(), view["profit"].sum()
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Doanh thu", f"${sales:,.0f}")
-    k2.metric("Lợi nhuận", f"${profit:,.0f}")
-    k3.metric("Biên lợi nhuận", f"{100 * profit / sales:.1f}%")
-    k4.metric("Đơn hàng", f"{view['order_id'].nunique():,}")
-    st.caption("Doanh thu và lợi nhuận là tổng các dòng sản phẩm; số đơn là Order ID duy nhất.")
-
-    daily = daily_revenue(view).rename("sales").reset_index().rename(columns={"order_date": "date"})
-    st.plotly_chart(px.line(daily, x="date", y="sales", title="Doanh thu ghi nhận theo ngày"), width="stretch")
-    left, right = st.columns(2)
-    with left:
-        region = performance(view, "region")
-        st.plotly_chart(px.bar(region, x="region", y=["sales", "profit"], barmode="group",
-                               title="Doanh thu và lợi nhuận theo khu vực"), width="stretch")
-        st.dataframe(region.style.format({"sales": "${:,.0f}", "profit": "${:,.0f}",
-                                          "margin_pct": "{:.1f}%"}), hide_index=True, width="stretch")
-    with right:
-        subcat = performance(view, "sub_category")
-        st.plotly_chart(px.bar(subcat.sort_values("profit").head(10), x="profit", y="sub_category",
-                               orientation="h", color="profit", color_continuous_scale="RdBu",
-                               title="10 nhóm sản phẩm có lợi nhuận thấp nhất"), width="stretch")
-        st.dataframe(subcat[["sub_category", "sales", "profit", "margin_pct"]].style.format(
-            {"sales": "${:,.0f}", "profit": "${:,.0f}", "margin_pct": "{:.1f}%"}),
-            hide_index=True, width="stretch")
-
-with tab_discount:
-    st.subheader("Chiết khấu và lợi nhuận")
-    bands = discount_summary(view)
-    st.plotly_chart(px.bar(bands, x="discount_band", y="margin_pct", color="loss_rate",
-                           labels={"discount_band": "Mức chiết khấu", "margin_pct": "Biên lợi nhuận (%)",
-                                   "loss_rate": "Tỷ lệ dòng lỗ"},
-                           title="Biên lợi nhuận theo mức chiết khấu"), width="stretch")
-    st.dataframe(bands.style.format({"sales": "${:,.0f}", "profit": "${:,.0f}",
-                                      "avg_profit": "${:,.2f}", "loss_rate": "{:.1%}",
-                                      "margin_pct": "{:.1f}%"}), hide_index=True, width="stretch")
-    st.caption("Các nhóm chiết khấu là thống kê mô tả trên từng dòng sản phẩm, không phải thử nghiệm A/B.")
+def load_data_from_db():
+    if not os.path.exists(DB_PATH):
+        return None
     try:
-        regression = discount_regression(view)
-        st.markdown("#### Hồi quy biên lợi nhuận")
-        a, b, c = st.columns(3)
-        a.metric("Thay đổi ước lượng khi chiết khấu tăng 10 điểm %",
-                 f"{regression['per_10pp']:+.1f} điểm %")
-        b.metric("Khoảng tin cậy 95%", f"[{regression['ci_low']:+.1f}; {regression['ci_high']:+.1f}]")
-        c.metric("R² / số dòng", f"{regression['r2']:.2f} / {regression['n']:,}")
-        st.caption("OLS với sai số chuẩn HC3; kiểm soát quy mô doanh thu (log), số lượng, danh mục, khu vực và năm. "
-                   "Đây là mối liên hệ trong dữ liệu quan sát, không chứng minh chiết khấu gây ra thay đổi lợi nhuận.")
-    except ValueError as exc:
-        st.info(str(exc))
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql("SELECT * FROM sales_data", conn)
+        conn.close()
+        
+        if 'order_date' in df.columns:
+            df['order_date'] = pd.to_datetime(df['order_date'], errors='coerce')
+            
+        return df
+    except Exception as e:
+        st.error(f"Lỗi kết nối CSDL: {e}")
+        return None
 
-with tab_forecast:
-    st.subheader("Dự báo doanh thu theo ngày")
-    days = st.slider("Số ngày dự báo", min_value=7, max_value=28, value=14, step=7)
-    st.caption("Mùa vụ theo tuần (7 ngày). Ngày không có giao dịch ghi nhận được tính là 0; "
-               "không thể xác minh từ nguồn liệu cửa hàng có đóng cửa vào những ngày đó hay không.")
-    try:
-        results = forecast_for_scope(scope, days)
-        metrics = results["metrics"]
-        st.markdown(f"**Đánh giá trên 3 khoảng liên tiếp, mỗi khoảng {days} ngày cuối lịch sử**")
-        st.dataframe(metrics.style.format({"mae": "${:,.0f}", "wape_pct": "{:.1f}%"}), width="stretch")
-        st.caption("MAE là sai số tuyệt đối trung bình mỗi ngày; WAPE = tổng sai số tuyệt đối / tổng doanh thu thực tế. "
-                   "Các mô hình chỉ học từ dữ liệu trước mỗi khoảng kiểm tra.")
-        series = daily_revenue(scope)
-        future = results["future"]
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=series.tail(90).index, y=series.tail(90).values,
-                                 name="Thực tế", mode="lines"))
-        fig.add_trace(go.Scatter(x=future["date"], y=future["holt_winters"],
-                                 name="Holt-Winters", mode="lines+markers"))
-        fig.add_trace(go.Scatter(x=future["date"], y=future["seasonal_naive"],
-                                 name="Cùng thứ tuần trước", mode="lines", line={"dash": "dot"}))
-        fig.update_layout(title="90 ngày cuối và dự báo tiếp theo", xaxis_title="Ngày",
-                          yaxis_title="Doanh thu (USD)")
-        st.plotly_chart(fig, width="stretch")
-        st.dataframe(future.style.format({"holt_winters": "${:,.0f}",
-                                          "seasonal_naive": "${:,.0f}"}),
-                     hide_index=True, width="stretch")
-        if metrics.loc["Holt-Winters (7 ngày)", "mae"] >= metrics.loc["Cùng thứ tuần trước", "mae"]:
-            st.warning("Trong các khoảng kiểm tra này, Holt-Winters chưa vượt cách dự báo cùng thứ tuần trước.")
-    except ValueError as exc:
-        st.info(str(exc))
 
-with tab_quality:
-    st.subheader("Nguồn và kiểm toán dữ liệu")
-    audit = load_audit()
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Dòng nguồn", f"{audit['rows']:,}")
-    c2.metric("Dòng phân tích", f"{len(df):,}")
-    c3.metric("Ô thiếu nguồn", f"{audit['missing_cells']:,}")
-    c4.metric("Row ID trùng", f"{audit['duplicate_row_ids']:,}")
-    st.write("Ô thiếu theo cột:", audit["missing_by_column"] or "Không có")
-    st.write("Ngày đầu:", df["order_date"].min().date(), "· Ngày cuối:", df["order_date"].max().date())
-    st.info("File archive.zip được thầy gợi ý chỉ có Sales. Dự án dùng bản Sample Superstore "
-            "21 cột có Profit và Discount quan sát được. Dữ liệu là mẫu công khai để học tập, "
-            "không đại diện cho hoạt động của một doanh nghiệp cụ thể.")
+st.title("📊 SMB Sales Analytics & Pricing Optimization Platform")
+st.markdown("---")
+
+df = load_data_from_db()
+
+if df is not None and not df.empty:
+    st.sidebar.header("🔍 Bộ Lọc Dữ Liệu")
+    categories = df['category'].dropna().unique().tolist() if 'category' in df.columns else []
+    selected_category = st.sidebar.multiselect(
+        "Chọn Danh Mục:", 
+        options=categories,
+        default=categories
+    )
+
+    if selected_category and 'category' in df.columns:
+        df_filtered = df[df['category'].isin(selected_category)]
+    else:
+        df_filtered = df.copy()
+
+    # Khai báo đầy đủ 5 Tab tích hợp toàn diện phân tích và chất lượng dữ liệu
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📊 Analytics & Insights", 
+        "🤖 Sales Forecasting (Time Series)", 
+        "📑 Business Report",
+        "🔍 Missing Data Details",
+        "🎯 Outlier & Noise Details"
+    ])
+
+    # =========================================================================
+    # TAB 1: EDA (An) & STATISTICAL TESTING (Đức)
+    # =========================================================================
+    with tab1:
+        # --- Khối xuất file dữ liệu đã làm sạch ---
+        col_export_info, col_export_btn = st.columns([3, 1])
+        with col_export_info:
+            st.markdown("#### 📥 Xuất File Dữ Liệu Đã Làm Sạch")
+            st.caption(f"Tập dữ liệu đã chuẩn hóa qua 6 bước tiền xử lý & làm sạch (Hiện có **{len(df_filtered):,}** dòng sẵn sàng trích xuất).")
+        with col_export_btn:
+            csv_bytes = df_filtered.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Xuất file đã sạch (CSV)",
+                data=csv_bytes,
+                file_name="cleaned_cafe_sales.csv",
+                mime="text/csv",
+                type="primary",
+                use_container_width=True,
+                help="Tải xuống tập dữ liệu cleaned_cafe_sales.csv đã xử lý khuyết thiếu, nhiễu và ngoại lai"
+            )
+        st.markdown("---")
+
+        total_sales = df_filtered['sales'].sum() if 'sales' in df_filtered.columns else 0.0
+        total_orders = df_filtered['order_id'].nunique() if 'order_id' in df_filtered.columns else len(df_filtered)
+        total_qty = df_filtered['quantity'].sum() if 'quantity' in df_filtered.columns else 0.0
+        avg_order_value = (total_sales / total_orders) if total_orders > 0 else 0.0
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Tổng Doanh Thu", f"${total_sales:,.2f}")
+        col2.metric("Tổng Số Đơn Hàng", f"{total_orders:,}")
+        col3.metric("Tổng Sản Phẩm Đã Bán", f"{int(total_qty):,}")
+        col4.metric("Giá Trị Đơn TB (AOV)", f"${avg_order_value:,.2f}")
+        
+        st.markdown("---")
+        
+        st.subheader("📈 Phân tích Xu hướng & Hiệu suất Doanh thu")
+        st.plotly_chart(plot_sales_over_time(df_filtered), width="stretch")
+        
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.plotly_chart(plot_category_performance(df_filtered), width="stretch")
+        with col_right:
+            if 'payment_method' in df_filtered.columns:
+                import plotly.express as px
+                fig_pm = px.pie(
+                    df_filtered, 
+                    names='payment_method', 
+                    values='sales', 
+                    title='💳 Tỷ trọng Doanh thu theo Phương thức Thanh toán',
+                    hole=0.4
+                )
+                fig_pm.update_layout(template='plotly_white')
+                st.plotly_chart(fig_pm, width="stretch")
+            else:
+                st.plotly_chart(plot_discount_vs_profit(df_filtered), width="stretch")
+
+        col_eda1, col_eda2 = st.columns(2)
+        with col_eda1:
+            fig_sub = plot_top_subcategories(df_filtered)
+            st.plotly_chart(fig_sub, width="stretch")
+        with col_eda2:
+            fig_heat = plot_sales_heatmap(df_filtered)
+            st.plotly_chart(fig_heat, width="stretch")
+
+        # Phân hệ Kiểm định thống kê (chỉ kích hoạt nếu có trường chiết khấu & lợi nhuận)
+        if 'discount' in df_filtered.columns and 'profit' in df_filtered.columns:
+            st.markdown("---")
+            render_stats(df_filtered, discount_col='discount', profit_col='profit')
+
+        st.markdown("---")
+        st.markdown("### 📋 Dữ liệu mẫu (Top 10 dòng)")
+        st.dataframe(df_filtered.head(10), width="stretch")
+
+    # =========================================================================
+    # TAB 2: MACHINE LEARNING SALES FORECASTING (Trí)
+    # =========================================================================
+    with tab2:
+        st.subheader("💡 Dự Báo Doanh Số Tương Lai (Time Series Forecasting)")
+        st.write("Hệ thống sử dụng mô hình học máy chuỗi thời gian **Holt-Winters Exponential Smoothing** để dự báo xu hướng doanh số trong các tháng tiếp theo dựa trên dữ liệu lịch sử.")
+        
+        col_in1, col_in2 = st.columns([1, 2])
+        with col_in1:
+            st.markdown("### 🎛️ Bảng Điều Khiển Kịch Bản")
+            cat_input = st.selectbox(
+                "Chọn Ngành hàng (Category):", 
+                options=["All"] + (categories if categories else ["Technology"])
+            )
+            months_input = st.slider(
+                "Số tháng dự báo tương lai:", 
+                min_value=3, 
+                max_value=12, 
+                value=6, 
+                step=1
+            )
+            
+            run_sim = st.button("🚀 Chạy Dự Báo", width="stretch", type="primary")
+
+        with col_in2:
+            try:
+                # 1. Hiển thị dữ liệu lịch sử
+                ts_hist = prepare_time_series_data(df, freq='ME', category=cat_input)
+                
+                # 2. Load model and predict
+                import plotly.graph_objects as go
+                
+                if not ts_hist.empty and len(ts_hist) >= 6:
+                    # Train model dynamically for the specific category if needed, 
+                    # or just load the base model if 'All'
+                    from src.model import train_forecast_model
+                    model, metrics = train_forecast_model(df, category=cat_input)
+                    
+                    forecast_df = forecast_future_sales(model, steps=months_input)
+                    
+                    st.markdown("### 🎯 Kết Quả Đánh Giá & Dự Báo")
+                    m_col1, m_col2, m_col3 = st.columns(3)
+                    
+                    total_forecast = forecast_df['predicted_sales'].sum()
+                    avg_forecast = forecast_df['predicted_sales'].mean()
+                    
+                    m_col1.metric("Tổng Doanh Số Dự Báo", f"${total_forecast:,.2f}")
+                    m_col2.metric("Trung bình / Tháng", f"${avg_forecast:,.2f}")
+                    m_col3.metric("Sai Số (MAE)", f"${metrics['mae']:,.2f}")
+                    
+                    st.markdown("---")
+                    st.markdown(f"#### 📈 Biểu đồ Lịch sử và Dự báo Doanh số ({cat_input})")
+                    
+                    fig_ts = go.Figure()
+                    
+                    # Dữ liệu lịch sử
+                    fig_ts.add_trace(go.Scatter(
+                        x=ts_hist.index,
+                        y=ts_hist['sales'],
+                        mode='lines+markers',
+                        name='Thực tế (Historical)',
+                        line=dict(color='royalblue', width=2)
+                    ))
+                    
+                    # Dữ liệu dự báo
+                    # Nối điểm cuối cùng của lịch sử với điểm đầu của dự báo để không đứt đoạn
+                    last_hist_date = ts_hist.index[-1]
+                    last_hist_val = ts_hist['sales'].iloc[-1]
+                    
+                    forecast_dates = [last_hist_date] + list(forecast_df['forecast_date'])
+                    forecast_vals = [last_hist_val] + list(forecast_df['predicted_sales'])
+                    
+                    fig_ts.add_trace(go.Scatter(
+                        x=forecast_dates,
+                        y=forecast_vals,
+                        mode='lines+markers',
+                        name='Dự báo (Forecast)',
+                        line=dict(color='red', width=2, dash='dash')
+                    ))
+                    
+                    fig_ts.update_layout(
+                        template='plotly_white',
+                        xaxis_title="Thời gian",
+                        yaxis_title="Doanh số ($)",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                    )
+                    
+                    st.plotly_chart(fig_ts, width="stretch")
+                    
+                    st.markdown("#### ⚖️ Bảng Dữ Liệu Tương Lai")
+                    st.dataframe(
+                        forecast_df.rename(columns={
+                            'forecast_date': 'Tháng',
+                            'predicted_sales': 'Doanh số dự báo ($)'
+                        }).style.format({'Doanh số dự báo ($)': "${:,.2f}"}),
+                        width="stretch"
+                    )
+                    
+                else:
+                    st.warning(f"⚠️ Dữ liệu lịch sử cho danh mục {cat_input} quá ít (dưới 6 tháng), không đủ để chạy thuật toán Time Series.")
+                
+            except Exception as e:
+                st.error(f"⚠️ Lỗi khi chạy mô hình dự báo Time Series: {e}")
+
+    # =========================================================================
+    # TAB 3: BUSINESS REPORT (Mạnh)
+    # =========================================================================
+    with tab3:
+        render_business_report(df_filtered)
+
+    # =========================================================================
+    # TAB 4: MISSING DATA DETAILS
+    # =========================================================================
+    with tab4:
+        render_missing_details()
+
+    # =========================================================================
+    # TAB 5: OUTLIER & NOISE DETAILS
+    # =========================================================================
+    with tab5:
+        render_outlier_noise_details()
+
+else:
+    st.warning("⚠️ Chưa tìm thấy dữ liệu trong Database. Vui lòng kiểm tra file `data/data.db` hoặc chạy `src/pipeline.py`!")
