@@ -56,13 +56,13 @@ def render_business_report(df: pd.DataFrame):
     with col_rec1:
         st.info("💡 **Ghi nhận từ mô hình chuỗi thời gian & hành vi:**")
         st.markdown("""
-        * **Tính mùa vụ & chu kỳ theo tuần:** Doanh số có sự dao động rõ rệt giữa các ngày trong tuần và các tháng cao điểm.
+        * **Chu kỳ theo tuần:** Có thể đối chiếu mức doanh số giữa các ngày trong tuần trên biểu đồ ngày.
         * **Đóng góp doanh thu chủ lực:** Nhóm đồ uống (Coffee, Smoothie, Juice) và bánh đóng góp phần lớn tỷ trọng doanh thu toàn quán.
         """)
 
     with col_rec2:
         st.success("🎯 **Kiến nghị hành động cho Quán:**")
         st.markdown("""
-        * **Dự báo nhu cầu nguyên vật liệu:** Dựa vào kết quả dự báo doanh thu ở Tab 2 để chủ động chuẩn bị nguyên phụ liệu trước các tháng cao điểm.
+        * **Dự báo nhu cầu nguyên vật liệu:** Dựa vào kết quả dự báo doanh thu theo ngày ở Tab 2 để chuẩn bị nguyên phụ liệu cho các ngày tiếp theo.
         * **Tối ưu hóa giá trị đơn hàng (AOV):** Áp dụng chiến lược combo (ví dụ: Cà phê + Bánh ngọt) để nâng cao giá trị trung bình trên mỗi lượt giao dịch.
         """)

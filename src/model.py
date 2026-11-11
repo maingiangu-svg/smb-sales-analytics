@@ -1,6 +1,5 @@
 import os
 import sqlite3
-import warnings
 import joblib
 import numpy as np
 import pandas as pd
@@ -10,77 +9,90 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-warnings.filterwarnings("ignore")
-
 DB_PATH = os.path.join("data", "data.db")
 FORECAST_MODEL_PATH = os.path.join("data", "sales_forecast_model.joblib")
 PRICING_MODEL_PATH = os.path.join("data", "pricing_model.joblib")
 
 
-def _month_end_freq():
-    try:
-        pd.tseries.frequencies.to_offset("ME")
-        return "ME"
-    except Exception:
-        return "M"
-
-
 # ==============================================================================
 # 1. TIME SERIES FORECASTING (HOLT-WINTERS)
 # ==============================================================================
-def prepare_time_series_data(df, freq=None, category=None):
-    if freq is None or freq == "ME":
-        freq = _month_end_freq()
+def prepare_time_series_data(df, freq="D", category=None):
+    """Aggregate observed cafe sales by calendar day for a selected category."""
+    if freq != "D":
+        raise ValueError("Dự báo hiện chỉ hỗ trợ doanh thu theo ngày (freq='D').")
     df_ts = df.copy()
     if category and category != "All" and "category" in df_ts.columns:
         df_ts = df_ts[df_ts["category"] == category]
 
     df_ts["order_date"] = pd.to_datetime(df_ts["order_date"], errors="coerce")
-    df_ts = df_ts.dropna(subset=["order_date"]).sort_values("order_date")
+    df_ts["sales"] = pd.to_numeric(df_ts["sales"], errors="coerce")
+    df_ts = df_ts.dropna(subset=["order_date", "sales"])
+    if df_ts.empty:
+        return pd.DataFrame(columns=["sales"], index=pd.DatetimeIndex([], name="order_date"))
 
-    ts_data = df_ts.groupby(pd.Grouper(key="order_date", freq=freq))["sales"].sum().reset_index()
-    ts_data = ts_data.set_index("order_date").asfreq(freq, fill_value=0.0)
-    return ts_data
+    daily = df_ts.groupby(df_ts["order_date"].dt.normalize())["sales"].sum()
+    daily.index.name = "order_date"
+    # A date without recorded sales in this category is represented by zero.
+    return daily.asfreq("D", fill_value=0.0).to_frame("sales")
 
 
-def train_forecast_model(df=None, model_path=FORECAST_MODEL_PATH, category=None):
+def _fit_daily_holt_winters(sales):
+    return ExponentialSmoothing(
+        sales, trend="add", damped_trend=True, seasonal="add",
+        seasonal_periods=7, initialization_method="estimated",
+    ).fit(optimized=True)
+
+
+def train_forecast_model(df=None, model_path=FORECAST_MODEL_PATH, category=None,
+                         horizon=14, folds=3, save_model=False):
+    """Backtest on consecutive future windows, then fit on all daily history."""
     if df is None:
         with sqlite3.connect(DB_PATH) as conn:
             df = pd.read_sql("SELECT * FROM sales_data", conn)
 
     ts_data = prepare_time_series_data(df, category=category)
-    test_size = min(3, max(1, len(ts_data) // 4))
-    train, test = ts_data.iloc[:-test_size], ts_data.iloc[-test_size:]
+    if not 1 <= horizon <= 28 or folds < 1:
+        raise ValueError("Chọn 1–28 ngày dự báo và ít nhất một lần kiểm tra.")
+    if len(ts_data) < 56 + horizon * folds:
+        raise ValueError("Cần thêm dữ liệu theo ngày để kiểm tra và học mùa vụ 7 ngày.")
 
-    # Với dữ liệu 12 tháng (train = 9 tháng), sử dụng chu kỳ Quý (seasonal_periods=4)
-    seasonal_periods = 4 if len(train) >= 8 else max(2, len(train) // 2)
-    try:
-        model = ExponentialSmoothing(
-            train["sales"], trend="add", seasonal="add",
-            seasonal_periods=seasonal_periods, initialization_method="estimated"
-        ).fit()
-        preds = model.forecast(len(test))
-        final_model = ExponentialSmoothing(
-            ts_data["sales"], trend="add", seasonal="add",
-            seasonal_periods=seasonal_periods, initialization_method="estimated"
-        ).fit()
-    except Exception:
-        model = ExponentialSmoothing(train["sales"], trend="add", seasonal=None).fit()
-        preds = model.forecast(len(test))
-        final_model = ExponentialSmoothing(ts_data["sales"], trend="add", seasonal=None).fit()
+    actuals, predictions, baselines = [], [], []
+    for fold in range(folds, 0, -1):
+        end = len(ts_data) - (fold - 1) * horizon
+        train = ts_data["sales"].iloc[:end - horizon]
+        actual = ts_data["sales"].iloc[end - horizon:end].to_numpy(dtype=float)
+        fitted = _fit_daily_holt_winters(train)
+        predicted = np.maximum(0, np.asarray(fitted.forecast(horizon), dtype=float))
+        baseline = np.resize(train.iloc[-7:].to_numpy(dtype=float), horizon)
+        actuals.extend(actual)
+        predictions.extend(predicted)
+        baselines.extend(baseline)
 
-    mae = mean_absolute_error(test["sales"], preds)
-    rmse = np.sqrt(mean_squared_error(test["sales"], preds))
-    metrics = {"mae": round(float(mae), 2), "rmse": round(float(rmse), 2), "num_months": len(ts_data)}
+    actuals = np.asarray(actuals)
+    predictions = np.asarray(predictions)
+    baselines = np.asarray(baselines)
+    actual_total = actuals.sum()
+    metrics = {
+        "mae": round(float(mean_absolute_error(actuals, predictions)), 2),
+        "rmse": round(float(np.sqrt(mean_squared_error(actuals, predictions))), 2),
+        "wape": round(float(100 * np.abs(actuals - predictions).sum() / actual_total), 1) if actual_total else np.nan,
+        "baseline_mae": round(float(mean_absolute_error(actuals, baselines)), 2),
+        "baseline_wape": round(float(100 * np.abs(actuals - baselines).sum() / actual_total), 1) if actual_total else np.nan,
+        "num_days": len(ts_data),
+        "test_days": horizon * folds,
+        "folds": folds,
+    }
 
-    if not category or category == "All":
+    final_model = _fit_daily_holt_winters(ts_data["sales"])
+    if save_model and (not category or category == "All"):
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
         joblib.dump(final_model, model_path)
 
     return final_model, metrics
 
 
-def forecast_future_sales(model, steps=6):
+def forecast_future_sales(model, steps=14):
     forecast = model.forecast(steps)
     return pd.DataFrame({
         "forecast_date": forecast.index,
@@ -153,8 +165,13 @@ def optimize_discount(category: str, target_sales: float, model_path=PRICING_MOD
 
 def load_or_train_model(model_path=FORECAST_MODEL_PATH, db_path=DB_PATH):
     if os.path.exists(model_path):
-        return joblib.load(model_path)
-    model, _ = train_forecast_model(model_path=model_path)
+        saved = joblib.load(model_path)
+        index = getattr(saved.model, "_index", None)
+        if getattr(index, "freqstr", None) == "D" and getattr(saved.model, "seasonal_periods", None) == 7:
+            return saved
+    with sqlite3.connect(db_path) as conn:
+        df = pd.read_sql("SELECT * FROM sales_data", conn)
+    model, _ = train_forecast_model(df=df, model_path=model_path)
     return model
 
 

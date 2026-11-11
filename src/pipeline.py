@@ -190,7 +190,7 @@ def step6_enforce_business_constraints(df: pd.DataFrame) -> pd.DataFrame:
        - Salad: 28–33%
        - Sandwich: 28–35%
        - Default: 20–30%
-    2. Bóc tách đặc trưng thời gian (year, month, quarter, day_of_week) phục vụ mô hình dự báo doanh số theo tháng.
+    2. Bóc tách đặc trưng thời gian (year, month, quarter, day_of_week) phục vụ phân tích; mô hình dự báo dùng ngày giao dịch trực tiếp.
     """
     df = df.copy()
 

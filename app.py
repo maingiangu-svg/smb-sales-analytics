@@ -14,7 +14,7 @@ from src.eda import (
     plot_sales_over_time,
     plot_top_subcategories,
 )
-from src.model import load_or_train_model, forecast_future_sales, prepare_time_series_data
+from src.model import forecast_future_sales, prepare_time_series_data, train_forecast_model
 from src.stats import render_streamlit as render_stats
 
 st.set_page_config(
@@ -149,8 +149,8 @@ if df is not None and not df.empty:
     # TAB 2: MACHINE LEARNING SALES FORECASTING (Trí)
     # =========================================================================
     with tab2:
-        st.subheader("💡 Dự Báo Doanh Số Tương Lai (Time Series Forecasting)")
-        st.write("Hệ thống sử dụng mô hình học máy chuỗi thời gian **Holt-Winters Exponential Smoothing** để dự báo xu hướng doanh số trong các tháng tiếp theo dựa trên dữ liệu lịch sử.")
+        st.subheader("💡 Dự Báo Doanh Số Theo Ngày")
+        st.write("Holt-Winters học chu kỳ **7 ngày** từ dữ liệu quán cà phê hiện có. Dự báo bắt đầu ngay sau ngày cuối cùng trong dữ liệu lịch sử.")
         
         col_in1, col_in2 = st.columns([1, 2])
         with col_in1:
@@ -159,95 +159,83 @@ if df is not None and not df.empty:
                 "Chọn Ngành hàng (Category):", 
                 options=["All"] + (categories if categories else ["Technology"])
             )
-            months_input = st.slider(
-                "Số tháng dự báo tương lai:", 
-                min_value=3, 
-                max_value=12, 
-                value=6, 
-                step=1
+            days_input = st.slider(
+                "Số ngày dự báo:",
+                min_value=7,
+                max_value=28,
+                value=14,
+                step=7,
             )
-            
             run_sim = st.button("🚀 Chạy Dự Báo", width="stretch", type="primary")
 
         with col_in2:
             try:
-                # 1. Hiển thị dữ liệu lịch sử
-                ts_hist = prepare_time_series_data(df, freq='ME', category=cat_input)
-                
-                # 2. Load model and predict
+                ts_hist = prepare_time_series_data(df, category=cat_input)
                 import plotly.graph_objects as go
-                
-                if not ts_hist.empty and len(ts_hist) >= 6:
-                    # Train model dynamically for the specific category if needed, 
-                    # or just load the base model if 'All'
-                    from src.model import train_forecast_model
-                    model, metrics = train_forecast_model(df, category=cat_input)
-                    
-                    forecast_df = forecast_future_sales(model, steps=months_input)
-                    
+
+                if ts_hist.empty:
+                    st.warning("Không có giao dịch hợp lệ cho danh mục đã chọn.")
+                elif run_sim:
+                    model, metrics = train_forecast_model(df, category=cat_input, horizon=days_input)
+                    forecast_df = forecast_future_sales(model, steps=days_input)
+
                     st.markdown("### 🎯 Kết Quả Đánh Giá & Dự Báo")
                     m_col1, m_col2, m_col3 = st.columns(3)
-                    
                     total_forecast = forecast_df['predicted_sales'].sum()
                     avg_forecast = forecast_df['predicted_sales'].mean()
-                    
                     m_col1.metric("Tổng Doanh Số Dự Báo", f"${total_forecast:,.2f}")
-                    m_col2.metric("Trung bình / Tháng", f"${avg_forecast:,.2f}")
-                    m_col3.metric("Sai Số (MAE)", f"${metrics['mae']:,.2f}")
-                    
+                    m_col2.metric("Trung bình / Ngày", f"${avg_forecast:,.2f}")
+                    m_col3.metric("MAE / Ngày", f"${metrics['mae']:,.2f}")
+                    st.caption(
+                        f"Đánh giá theo thời gian trên {metrics['folds']} khoảng liên tiếp, "
+                        f"mỗi khoảng {days_input} ngày. Holt-Winters: MAE ${metrics['mae']:,.2f}/ngày, "
+                        f"WAPE {metrics['wape']:.1f}%; cách dự báo cùng thứ tuần trước: "
+                        f"MAE ${metrics['baseline_mae']:,.2f}/ngày, WAPE {metrics['baseline_wape']:.1f}%."
+                    )
+                    st.caption("Ngày không có giao dịch ghi nhận cho danh mục được tính là 0. "
+                               "Dự báo nối tiếp dữ liệu năm 2023, không phải doanh thu hiện tại.")
                     st.markdown("---")
                     st.markdown(f"#### 📈 Biểu đồ Lịch sử và Dự báo Doanh số ({cat_input})")
-                    
                     fig_ts = go.Figure()
-                    
-                    # Dữ liệu lịch sử
                     fig_ts.add_trace(go.Scatter(
-                        x=ts_hist.index,
-                        y=ts_hist['sales'],
-                        mode='lines+markers',
-                        name='Thực tế (Historical)',
+                        x=ts_hist.tail(90).index,
+                        y=ts_hist['sales'].tail(90),
+                        mode='lines',
+                        name='Thực tế (90 ngày cuối)',
                         line=dict(color='royalblue', width=2)
                     ))
-                    
-                    # Dữ liệu dự báo
-                    # Nối điểm cuối cùng của lịch sử với điểm đầu của dự báo để không đứt đoạn
                     last_hist_date = ts_hist.index[-1]
                     last_hist_val = ts_hist['sales'].iloc[-1]
-                    
                     forecast_dates = [last_hist_date] + list(forecast_df['forecast_date'])
                     forecast_vals = [last_hist_val] + list(forecast_df['predicted_sales'])
-                    
                     fig_ts.add_trace(go.Scatter(
                         x=forecast_dates,
                         y=forecast_vals,
                         mode='lines+markers',
-                        name='Dự báo (Forecast)',
+                        name='Dự báo theo ngày',
                         line=dict(color='red', width=2, dash='dash')
                     ))
-                    
                     fig_ts.update_layout(
                         template='plotly_white',
-                        xaxis_title="Thời gian",
-                        yaxis_title="Doanh số ($)",
+                        xaxis_title="Ngày",
+                        yaxis_title="Doanh số / ngày ($)",
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                     )
-                    
                     st.plotly_chart(fig_ts, width="stretch")
-                    
                     st.markdown("#### ⚖️ Bảng Dữ Liệu Tương Lai")
                     st.dataframe(
                         forecast_df.rename(columns={
-                            'forecast_date': 'Tháng',
+                            'forecast_date': 'Ngày',
                             'predicted_sales': 'Doanh số dự báo ($)'
                         }).style.format({'Doanh số dự báo ($)': "${:,.2f}"}),
                         width="stretch"
                     )
-                    
+                    if metrics['mae'] >= metrics['baseline_mae']:
+                        st.warning("Holt-Winters chưa tốt hơn cách dự báo cùng thứ tuần trước ở các khoảng kiểm tra này.")
                 else:
-                    st.warning(f"⚠️ Dữ liệu lịch sử cho danh mục {cat_input} quá ít (dưới 6 tháng), không đủ để chạy thuật toán Time Series.")
-                
-            except Exception as e:
-                st.error(f"⚠️ Lỗi khi chạy mô hình dự báo Time Series: {e}")
+                    st.info(f"Dữ liệu lịch sử: {len(ts_hist)} ngày, đến {ts_hist.index.max():%d/%m/%Y}. Nhấn Chạy Dự Báo để xem kết quả.")
+            except ValueError as exc:
+                st.warning(str(exc))
 
     # =========================================================================
     # TAB 3: BUSINESS REPORT (Mạnh)

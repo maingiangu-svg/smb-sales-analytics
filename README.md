@@ -2,6 +2,10 @@
 
 Một nền tảng phân tích dữ liệu bán lẻ và gợi ý mức giá/chiết khấu tối ưu dành cho doanh nghiệp vừa và nhỏ (SMB). Dự án bao gồm Data Pipeline làm sạch dữ liệu tự động, lưu trữ SQLite, Dashboard tương tác trên Streamlit và mô hình Machine Learning dự báo lợi nhuận.
 
+## Dự báo doanh thu theo ngày
+
+Dự án dùng lại dữ liệu quán cà phê hiện có trong `data/dirty_cafe_sales.csv` (10.000 dòng). Pipeline tạo `data/cleaned_cafe_sales.csv` và `data/data.db` (9.540 giao dịch hợp lệ, từ 01/01 đến 31/12/2023); không cần dataset mới. Tab dự báo cộng doanh thu theo ngày, dùng Holt-Winters với mùa vụ 7 ngày và dự báo 7–28 ngày **ngay sau ngày cuối trong dữ liệu**. Mô hình được so với cách dự báo cùng thứ tuần trước trên 3 khoảng kiểm tra theo thời gian; báo MAE/ngày và WAPE. Ngày không ghi nhận giao dịch cho danh mục được tính là 0. Dự báo là thử nghiệm trên dữ liệu năm 2023, không đại diện cho doanh thu hiện tại.
+
 ---
 
 ## 🛠️ Kiến Trúc Hệ Thống

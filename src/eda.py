@@ -2,7 +2,7 @@ import plotly.express as px
 import pandas as pd
 
 def plot_sales_over_time(df):
-    """Biểu đồ xu hướng Doanh thu & Lợi nhuận hàng tháng"""
+    """Biểu đồ xu hướng Doanh thu & Lợi nhuận theo ngày."""
     cols = [c for c in ['sales', 'profit'] if c in df.columns]
     if not cols or 'order_date' not in df.columns:
         return px.line(title="⚠️ Thiếu dữ liệu thời gian")
@@ -17,20 +17,20 @@ def plot_sales_over_time(df):
     if df_temp.empty:
         return px.line(title="⚠️ Không có dữ liệu thời gian hợp lệ")
 
-    # 3. Gom nhóm theo tháng (Month End)
-    df_monthly = (
+    # Gom giao dịch theo ngày lịch; giữ ngày không có giao dịch ở mức 0.
+    df_daily = (
         df_temp.set_index('order_date')
-        .resample('ME')[cols]
+        .resample('D')[cols]
         .sum()
         .reset_index()
     )
     
     fig = px.line(
-        df_monthly, 
+        df_daily,
         x='order_date', 
         y=cols if len(cols) > 1 else cols[0],
-        title='📈 Xu hướng Doanh thu & Lợi nhuận hàng tháng',
-        labels={'value': 'USD ($)', 'order_date': 'Thời gian', 'variable': 'Chỉ số'}
+        title='📈 Xu hướng Doanh thu & Lợi nhuận theo ngày',
+        labels={'value': 'USD ($)', 'order_date': 'Ngày', 'variable': 'Chỉ số'}
     )
     fig.update_layout(template='plotly_white')
     return fig
@@ -172,4 +172,3 @@ def plot_sales_heatmap(df):
     )
     fig.update_layout(template='plotly_white')
     return fig
- 
