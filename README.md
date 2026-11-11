@@ -1,67 +1,38 @@
-# 📊 SMB Sales Analytics & Pricing Optimization Platform
+# Phân tích doanh thu và lợi nhuận bán lẻ
 
-Một nền tảng phân tích dữ liệu bán lẻ và gợi ý mức giá/chiết khấu tối ưu dành cho doanh nghiệp vừa và nhỏ (SMB). Dự án bao gồm Data Pipeline làm sạch dữ liệu tự động, lưu trữ SQLite, Dashboard tương tác trên Streamlit và mô hình Machine Learning dự báo lợi nhuận.
+Đồ án môn Nhập môn Khoa học dữ liệu: kiểm toán dữ liệu giao dịch Superstore, phân tích doanh thu/lợi nhuận theo khu vực và sản phẩm, khảo sát mối liên hệ giữa chiết khấu và biên lợi nhuận, và dự báo doanh thu theo ngày.
 
----
+## Nguồn dữ liệu
 
-## 🛠️ Kiến Trúc Hệ Thống
+- `data/superstore_raw.csv`: bản Sample Superstore 21 cột, 9.994 dòng, 2014-01-03 đến 2017-12-30. Tải từ [bản công khai trên GitHub](https://github.com/Himanshi252005/Superstore-Sales-Analysis/blob/main/Sample%20-%20Superstore.csv), cùng họ dữ liệu với [Sample Superstore trên Kaggle](https://www.kaggle.com/datasets/vivek468/superstore-dataset-final). Tệp gốc được giữ nguyên, mã hóa Latin-1.
+- `archive.zip` mà nhóm nhận được là bản Superstore `train.csv` 9.800 dòng, 18 cột, chỉ có `Sales`. Bản này không đủ để phân tích lợi nhuận hoặc chiết khấu như yêu cầu đề tài.
+- Dữ liệu quán cà phê và các notebook cũ nằm trong `archive/cafe/`. Dashboard hiện tại đọc `data/retail.db`, được tạo lại bằng pipeline và không cần đưa vào Git.
 
-```text
-Local Raw Data (CSV/Excel)
-       │
-       ▼
-Data Pipeline (src/pipeline.py) ──► Regex Cleaning & Feature Engineering
-       │
-       ▼
-SQLite Database (data/data.db)
-       │
-       ├──► Streamlit Dashboard (app.py & src/eda.py)
-       └──► ML Pricing Model (src/model.py)
-🚀 Tính Năng Chính
-Data Pipeline (ETL): Tự động đọc file dữ liệu local, chuẩn hóa tên cột SQL-friendly, làm sạch ký tự tiền tệ bẩn ($, ,, %) và bóc tách thời gian (year, month, day_of_week).
+Sample Superstore là dữ liệu học tập công khai, không đại diện cho sổ sách của một doanh nghiệp thật. Không công bố tên khách hàng từ nguồn trong giao diện.
 
-Interactive Dashboard:
+## Chạy dự án
 
-Hiển thị chỉ số KPI chính (Doanh thu, Lợi nhuận, Số đơn hàng, Chiết khấu trung bình).
-
-Biểu đồ xu hướng doanh số theo thời gian và hiệu năng theo danh mục sản phẩm.
-
-Bộ lọc tương tác đa chiều trên Sidebar.
-
-Pricing Optimization (ML): Huấn luyện mô hình hồi quy dự báo Lợi nhuận dựa trên Chiết khấu và Doanh số, gợi ý mức Chiết khấu (Discount) tối ưu.
-
-📁 Cấu Trúc Thư Mục
-Plaintext
-smb-sales-analytics/
-├── data/
-│   ├── train.csv           # File dữ liệu thô mẫu
-│   └── data.db             # Database SQLite (tự động khởi tạo)
-├── src/
-│   ├── pipeline.py         # Pipeline làm sạch và nạp dữ liệu
-│   ├── eda.py              # Các hàm trực quan hóa dữ liệu (Plotly)
-│   └── model.py            # Module Machine Learning & Optimization
-├── app.py                  # Giao diện chính Streamlit
-├── requirements.txt        # Danh sách thư viện phụ thuộc
-└── README.md
-⚙️ Hướng Dẫn Cài Đặt & Chạy Dự Án
-1. Cài đặt môi trường
-Bash
-# Clone repository
-git clone [https://github.com/maingiangu-svg/smb-sales-analytics.git](https://github.com/maingiangu-svg/smb-sales-analytics.git)
-cd smb-sales-analytics
-
-# Tạo và kích hoạt môi trường ảo (tùy chọn)
-python -m venv venv
-source venv/bin/activate  # Trên Windows: venv\Scripts\activate
-
-# Cài đặt thư viện
-pip install -r requirements.txt
-2. Chạy Data Pipeline
-Nạp dữ liệu từ file thô vào Database SQLite:
-
-Bash
-python -m src.pipeline
-3. Khởi chạy Web Dashboard
-Bash
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m src.retail_pipeline
 streamlit run app.py
-Giao diện sẽ tự động mở tại địa chỉ http://localhost:8501.
+```
+
+Pipeline chuẩn hóa tên cột, kiểm tra định dạng ngày, khoảng chiết khấu và giá trị số, rồi lưu dữ liệu hợp lệ vào SQLite. `profit` và `discount` là giá trị quan sát trong CSV, không được tạo bằng công thức hay điền giả. File nguồn có 0 ô thiếu và 0 Row ID trùng; sau kiểm tra còn 9.994 dòng.
+
+## Phương pháp
+
+1. **EDA:** tổng doanh thu, lợi nhuận, biên lợi nhuận (`sum(profit) / sum(sales)`), số đơn duy nhất; đối chiếu khu vực và nhóm sản phẩm lỗ.
+2. **Chiết khấu:** thống kê theo các mức 0%, 0–20%, 20–40%, 40–60%, >60%. Hồi quy OLS của biên lợi nhuận theo chiết khấu, log doanh thu, số lượng, danh mục, khu vực, năm; sai số chuẩn HC3. Hệ số chiết khấu là *mối liên hệ có điều kiện*, không phải tác động nhân quả. Đây không phải A/B test.
+3. **Dự báo:** cộng doanh thu theo ngày, lấp ngày không có giao dịch ghi nhận bằng 0, dùng Holt-Winters với chu kỳ tuần 7 ngày. So sánh với dự báo “cùng thứ tuần trước” trên 3 khoảng kiểm tra liên tiếp, mỗi khoảng dài bằng chân trời dự báo. Báo MAE và WAPE; chỉ dùng lịch sử có trước từng khoảng kiểm tra. Sau đó fit trên toàn bộ lịch sử và dự báo 7–28 ngày.
+
+Lưu ý: 0 vào ngày không có giao dịch là quy ước phân tích; nguồn không cho biết ngày cửa hàng đóng cửa. Dự báo chỉ nên được diễn giải như thử nghiệm trên bộ dữ liệu mẫu. Biểu đồ/hệ số có thể thay đổi khi lọc khu vực hoặc danh mục.
+
+## Cấu trúc chính
+
+- `src/retail_pipeline.py`: đọc, kiểm toán, làm sạch và lưu SQLite.
+- `src/retail_analysis.py`: tổng hợp lợi nhuận và hồi quy.
+- `src/retail_forecast.py`: chuỗi ngày, kiểm tra theo thời gian và dự báo.
+- `app.py`: dashboard Streamlit.
+
+Các notebook, mô hình và script slide quán cà phê thuộc phiên bản cũ nằm trong `archive/cafe/`; số liệu của chúng không mô tả pipeline bán lẻ hiện tại.

@@ -13,7 +13,7 @@ def normalize_headers(columns):
 
 
 def process_data_quality(df: pd.DataFrame) -> pd.DataFrame:
-    """Bài 3: Làm sạch Data Quality, khôi phục chéo Sales - Quantity - Price - Category."""
+    """Bài 3: Làm sạch Data Quality, khôi phục chéo Sales - Quantity - Price - Category"""
     df = df.copy()
     df.columns = normalize_headers(df.columns)
 

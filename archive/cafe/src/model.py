@@ -88,69 +88,6 @@ def forecast_future_sales(model, steps=6):
     })
 
 
-# ==============================================================================
-# 2. PRICING OPTIMIZATION (BASELINE LR vs ADVANCED RANDOM FOREST)
-# ==============================================================================
-def train_pricing_models(df=None, model_path=PRICING_MODEL_PATH):
-    if df is None:
-        with sqlite3.connect(DB_PATH) as conn:
-            df = pd.read_sql("SELECT * FROM sales_data", conn)
-
-    # Baseline: Linear Regression
-    X_base = df[["sales", "discount"]].fillna(0)
-    y = df["profit"].fillna(0)
-    Xb_tr, Xb_te, yb_tr, yb_te = train_test_split(X_base, y, test_size=0.2, random_state=42)
-    lr = LinearRegression().fit(Xb_tr, yb_tr)
-    yb_pred = lr.predict(Xb_te)
-
-    # Advanced: Random Forest với Category Encoding
-    X_adv = pd.get_dummies(df[["sales", "discount", "category"]], drop_first=False)
-    Xa_tr, Xa_te, ya_tr, ya_te = train_test_split(X_adv, y, test_size=0.2, random_state=42)
-    rf = RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42).fit(Xa_tr, ya_tr)
-    ya_pred = rf.predict(Xa_te)
-
-    bundle = {
-        "model": rf,
-        "features": list(X_adv.columns),
-        "baseline_metrics": {
-            "r2": round(float(r2_score(yb_te, yb_pred)), 4),
-            "mae": round(float(mean_absolute_error(yb_te, yb_pred)), 2),
-            "rmse": round(float(np.sqrt(mean_squared_error(yb_te, yb_pred))), 2)
-        },
-        "advanced_metrics": {
-            "r2": round(float(r2_score(ya_te, ya_pred)), 4),
-            "mae": round(float(mean_absolute_error(ya_te, ya_pred)), 2),
-            "rmse": round(float(np.sqrt(mean_squared_error(ya_te, ya_pred))), 2)
-        }
-    }
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    joblib.dump(bundle, model_path)
-    return bundle
-
-
-def optimize_discount(category: str, target_sales: float, model_path=PRICING_MODEL_PATH):
-    bundle = joblib.load(model_path) if os.path.exists(model_path) else train_pricing_models(model_path=model_path)
-    rf = bundle["model"]
-    feat_cols = bundle["features"]
-
-    discounts = np.linspace(0.0, 0.35, 36).round(2)
-    sim_df = pd.DataFrame({"sales": target_sales, "discount": discounts, "category": category})
-    sim_encoded = pd.get_dummies(sim_df, drop_first=False)
-    for col in feat_cols:
-        if col not in sim_encoded.columns:
-            sim_encoded[col] = 0
-    sim_encoded = sim_encoded[feat_cols]
-
-    sim_df["predicted_profit"] = rf.predict(sim_encoded).round(2)
-    best_row = sim_df.loc[sim_df["predicted_profit"].idxmax()]
-    return {
-        "best_discount": float(best_row["discount"]),
-        "max_profit": float(best_row["predicted_profit"]),
-        "curve": sim_df[["discount", "predicted_profit"]],
-        "metrics": bundle["advanced_metrics"]
-    }
-
-
 def load_or_train_model(model_path=FORECAST_MODEL_PATH, db_path=DB_PATH):
     if os.path.exists(model_path):
         return joblib.load(model_path)
@@ -160,7 +97,4 @@ def load_or_train_model(model_path=FORECAST_MODEL_PATH, db_path=DB_PATH):
 
 if __name__ == "__main__":
     _, ts_m = train_forecast_model()
-    p_bundle = train_pricing_models()
-    print(f"✅ Time Series Holt-Winters: MAE = ${ts_m['mae']}, RMSE = ${ts_m['rmse']}")
-    print(f"✅ Baseline Linear Regression: {p_bundle['baseline_metrics']}")
-    print(f"✅ Advanced Random Forest:     {p_bundle['advanced_metrics']}")
+    print(f"✅ Time Series Holt-Winters (Dự báo Doanh thu theo Tháng): MAE = ${ts_m['mae']}, RMSE = ${ts_m['rmse']}")
