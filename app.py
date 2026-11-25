@@ -16,7 +16,12 @@ from src.eda import (
 )
 from src.model import forecast_future_sales, prepare_time_series_data, train_forecast_model
 from src.stats import render_streamlit as render_stats
-
+from src.eda import (
+    plot_sales_boxplot_jitter,
+    plot_calendar_heatmap,
+    plot_bubble_scatter,
+    plot_100_stacked_bar
+)
 st.set_page_config(
     page_title="SMB Sales Analytics & Pricing", 
     page_icon="📊",
@@ -135,6 +140,34 @@ if df is not None and not df.empty:
         with col_eda2:
             fig_heat = plot_sales_heatmap(df_filtered)
             st.plotly_chart(fig_heat, width="stretch")
+
+        # Advanced EDA Charts
+        st.markdown("---")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.plotly_chart(
+                plot_sales_boxplot_jitter(df_filtered),
+                use_container_width=True,
+                key="sales_boxplot_jitter"
+            )
+
+        col3, col4 = st.columns(2)
+
+        with col3:
+            st.plotly_chart(
+                plot_bubble_scatter(df_filtered),
+                use_container_width=True,
+                key="bubble_scatter"
+            )
+
+        with col4:
+            st.plotly_chart(
+                plot_100_stacked_bar(df_filtered),
+                use_container_width=True,
+                key="stacked_bar_100"
+            )
 
         # Phân hệ Kiểm định thống kê (chỉ kích hoạt nếu có trường chiết khấu & lợi nhuận)
         if 'discount' in df_filtered.columns and 'profit' in df_filtered.columns:

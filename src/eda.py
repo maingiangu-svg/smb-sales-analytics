@@ -172,3 +172,273 @@ def plot_sales_heatmap(df):
     )
     fig.update_layout(template='plotly_white')
     return fig
+
+# ============================================================
+# ADVANCED EDA CHARTS
+# ============================================================
+
+import plotly.express as px
+import pandas as pd
+
+
+# 1. BOXPLOT + JITTER
+# Phân phối doanh thu ngày theo thứ trong tuần
+def plot_sales_boxplot_jitter(df):
+    """
+    Boxplot + Jitter:
+    - Trục X: Thứ trong tuần
+    - Trục Y: Doanh thu mỗi ngày
+    - Mỗi điểm: Một ngày giao dịch
+    """
+
+    if df is None or df.empty:
+        return px.box(title="⚠️ Không có dữ liệu")
+
+    required = ['order_date', 'sales']
+    if not all(col in df.columns for col in required):
+        return px.box(title="⚠️ Thiếu order_date hoặc sales")
+
+    temp = df.copy()
+    temp['order_date'] = pd.to_datetime(
+        temp['order_date'], errors='coerce'
+    )
+    temp['sales'] = pd.to_numeric(temp['sales'], errors='coerce')
+
+    temp = temp.dropna(subset=['order_date', 'sales'])
+
+    if temp.empty:
+        return px.box(title="⚠️ Không có dữ liệu hợp lệ")
+
+    # Tổng doanh thu theo từng ngày
+    daily = (
+        temp.groupby(temp['order_date'].dt.date)['sales']
+        .sum()
+        .reset_index()
+    )
+
+    daily.columns = ['date', 'daily_sales']
+    daily['date'] = pd.to_datetime(daily['date'])
+
+    # Tạo thứ trong tuần
+    day_order = [
+        'Monday', 'Tuesday', 'Wednesday',
+        'Thursday', 'Friday', 'Saturday', 'Sunday'
+    ]
+
+    daily['day_of_week'] = daily['date'].dt.day_name()
+
+    fig = px.box(
+        daily,
+        x='day_of_week',
+        y='daily_sales',
+        points='all',
+        category_orders={'day_of_week': day_order},
+        title='📦 Phân phối doanh thu ngày theo thứ trong tuần',
+        labels={
+            'day_of_week': 'Thứ trong tuần',
+            'daily_sales': 'Doanh thu mỗi ngày ($)'
+        },
+        hover_data=['date']
+    )
+
+    fig.update_traces(
+        jitter=0.35,
+        pointpos=0,
+        marker=dict(opacity=0.65, size=5)
+    )
+
+    fig.update_layout(
+        template='plotly_white',
+        xaxis_title='Thứ trong tuần',
+        yaxis_title='Doanh thu mỗi ngày ($)'
+    )
+
+    return fig
+
+
+# 2. CALENDAR HEATMAP
+# Tháng x Thứ trong tuần
+def plot_calendar_heatmap(df):
+    """
+    Calendar Heatmap:
+    - Trục X: Tháng
+    - Trục Y: Thứ trong tuần
+    - Màu sắc: Tổng doanh thu
+    """
+
+    # Tận dụng hàm Heatmap đã có trong dự án
+    return plot_sales_heatmap(df)
+
+
+# 3. BUBBLE SCATTER
+# Số giao dịch x AOV, kích thước = doanh thu
+def plot_bubble_scatter(df):
+    """
+    Bubble Scatter:
+    - Trục X: Số giao dịch
+    - Trục Y: AOV (Average Order Value)
+    - Kích thước bong bóng: Tổng doanh thu
+    - Mỗi bong bóng: Một danh mục sản phẩm
+    """
+
+    if df is None or df.empty:
+        return px.scatter(title="⚠️ Không có dữ liệu")
+
+    required = ['sales', 'category']
+    if not all(col in df.columns for col in required):
+        return px.scatter(
+            title="⚠️ Thiếu dữ liệu Sales hoặc Category"
+        )
+
+    temp = df.copy()
+    temp['sales'] = pd.to_numeric(
+        temp['sales'], errors='coerce'
+    )
+    temp = temp.dropna(subset=['sales', 'category'])
+
+    if temp.empty:
+        return px.scatter(title="⚠️ Không có dữ liệu hợp lệ")
+
+    # Số giao dịch duy nhất
+    if 'order_id' in temp.columns:
+        transaction_count = (
+            temp.groupby('category')['order_id'].nunique()
+        )
+    else:
+        transaction_count = temp.groupby('category').size()
+
+    # Tổng doanh thu theo danh mục
+    summary = (
+        temp.groupby('category')['sales']
+        .sum()
+        .reset_index(name='total_sales')
+    )
+
+    summary['transaction_count'] = (
+        summary['category'].map(transaction_count)
+    )
+
+    # AOV = Tổng doanh thu / Số giao dịch
+    summary['aov'] = (
+        summary['total_sales'] /
+        summary['transaction_count'].replace(0, float('nan'))
+    )
+
+    summary = summary.dropna(
+        subset=['transaction_count', 'aov']
+    )
+
+    if summary.empty:
+        return px.scatter(title="⚠️ Không có dữ liệu để vẽ")
+
+    fig = px.scatter(
+        summary,
+        x='transaction_count',
+        y='aov',
+        size='total_sales',
+        color='category',
+        hover_name='category',
+        size_max=60,
+        title='🫧 Mối quan hệ giữa số giao dịch và AOV',
+        labels={
+            'transaction_count': 'Số giao dịch',
+            'aov': 'Giá trị đơn hàng trung bình ($)',
+            'total_sales': 'Tổng doanh thu ($)',
+            'category': 'Danh mục'
+        }
+    )
+
+    fig.update_layout(
+        template='plotly_white',
+        xaxis_title='Số giao dịch',
+        yaxis_title='AOV ($)'
+    )
+
+    return fig
+
+
+# 4. 100% STACKED BAR
+# Kênh phục vụ x Phương thức thanh toán
+def plot_100_stacked_bar(df):
+    """
+    100% Stacked Bar:
+    - Trục X: Kênh phục vụ (location)
+    - Trục Y: Tỷ lệ giao dịch (%)
+    - Màu sắc: Phương thức thanh toán
+    """
+
+    if df is None or df.empty:
+        return px.bar(title="⚠️ Không có dữ liệu")
+
+    required = ['location', 'payment_method']
+    if not all(col in df.columns for col in required):
+        return px.bar(
+            title="⚠️ Thiếu Location hoặc Payment Method"
+        )
+
+    temp = df.copy()
+
+    temp = temp.dropna(
+        subset=['location', 'payment_method']
+    )
+
+    if temp.empty:
+        return px.bar(title="⚠️ Không có dữ liệu hợp lệ")
+
+    # Đếm số giao dịch theo kênh phục vụ và phương thức thanh toán
+    if 'order_id' in temp.columns:
+        summary = (
+            temp.groupby(
+                ['location', 'payment_method']
+            )['order_id']
+            .nunique()
+            .reset_index(name='transactions')
+        )
+    else:
+        summary = (
+            temp.groupby(
+                ['location', 'payment_method']
+            )
+            .size()
+            .reset_index(name='transactions')
+        )
+
+    if summary.empty:
+        return px.bar(title="⚠️ Không có dữ liệu để vẽ")
+
+    # Tính tỷ lệ phần trăm trong từng kênh phục vụ
+    summary['percentage'] = (
+        summary['transactions'] /
+        summary.groupby('location')['transactions']
+        .transform('sum') * 100
+    )
+
+    fig = px.bar(
+        summary,
+        x='location',
+        y='percentage',
+        color='payment_method',
+        barmode='stack',
+        text=summary['percentage'].map(
+            lambda x: f'{x:.1f}%'
+        ),
+        title='💳 Tỷ trọng phương thức thanh toán theo kênh phục vụ',
+        labels={
+            'location': 'Kênh phục vụ',
+            'percentage': 'Tỷ lệ giao dịch (%)',
+            'payment_method': 'Phương thức thanh toán'
+        }
+    )
+
+    fig.update_layout(
+        template='plotly_white',
+        yaxis=dict(
+            title='Tỷ lệ giao dịch (%)',
+            range=[0, 100],
+            ticksuffix='%'
+        ),
+        xaxis_title='Kênh phục vụ',
+        legend_title='Phương thức thanh toán'
+    )
+
+    return fig
