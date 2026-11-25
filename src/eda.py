@@ -2,7 +2,7 @@ import plotly.express as px
 import pandas as pd
 
 def plot_sales_over_time(df):
-    """Biểu đồ xu hướng Doanh thu & Lợi nhuận hàng tháng"""
+    """Biểu đồ xu hướng Doanh thu & Lợi nhuận theo ngày."""
     cols = [c for c in ['sales', 'profit'] if c in df.columns]
     if not cols or 'order_date' not in df.columns:
         return px.line(title="⚠️ Thiếu dữ liệu thời gian")
@@ -17,20 +17,20 @@ def plot_sales_over_time(df):
     if df_temp.empty:
         return px.line(title="⚠️ Không có dữ liệu thời gian hợp lệ")
 
-    # 3. Gom nhóm theo tháng (Month End)
-    df_monthly = (
+    # Gom giao dịch theo ngày lịch; giữ ngày không có giao dịch ở mức 0.
+    df_daily = (
         df_temp.set_index('order_date')
-        .resample('ME')[cols]
+        .resample('D')[cols]
         .sum()
         .reset_index()
     )
     
     fig = px.line(
-        df_monthly, 
+        df_daily,
         x='order_date', 
         y=cols if len(cols) > 1 else cols[0],
-        title='📈 Xu hướng Doanh thu & Lợi nhuận hàng tháng',
-        labels={'value': 'USD ($)', 'order_date': 'Thời gian', 'variable': 'Chỉ số'}
+        title='📈 Xu hướng Doanh thu & Lợi nhuận theo ngày',
+        labels={'value': 'USD ($)', 'order_date': 'Ngày', 'variable': 'Chỉ số'}
     )
     fig.update_layout(template='plotly_white')
     return fig
@@ -80,44 +80,44 @@ def plot_discount_vs_profit(df):
 # Thêm fallback check dữ liệu đầu vào (tránh crash khi lọc dataframe rỗng).
 
 def plot_top_subcategories(df, top_n=10):
-    """
-    Biểu đồ cột ngang: Top N Sub-category đóng góp Lợi nhuận cao nhất.
-    Chấp nhận cả 'sub_category' và 'subcategory' (tùy cách chuẩn hóa tên cột ở pipeline).
-    """
+ 
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return px.bar(title="⚠️ Không có dữ liệu để hiển thị (dataframe rỗng)")
 
     subcat_col = next(
-        (c for c in ['sub_category', 'subcategory', 'sub-category'] if c in df.columns),
+        (c for c in ['sub_category', 'subcategory', 'sub-category', 'category'] if c in df.columns),
         None
     )
 
-    if not subcat_col or 'profit' not in df.columns:
-        return px.bar(title="⚠️ Thiếu dữ liệu Sub-category hoặc Profit")
+    metric_col = 'profit' if 'profit' in df.columns else 'sales'
+    metric_label = 'Lợi nhuận ($)' if metric_col == 'profit' else 'Doanh thu ($)'
+
+    if not subcat_col or metric_col not in df.columns:
+        return px.bar(title="⚠️ Thiếu dữ liệu phân loại hoặc doanh số")
 
     df_sub = (
-        df.groupby(subcat_col, dropna=True)['profit']
+        df.groupby(subcat_col, dropna=True)[metric_col]
         .sum()
         .reset_index()
-        .sort_values('profit', ascending=False)
+        .sort_values(metric_col, ascending=False)
         .head(top_n)
     )
 
     if df_sub.empty:
-        return px.bar(title="⚠️ Không có dữ liệu Sub-category để hiển thị")
+        return px.bar(title="⚠️ Không có dữ liệu để hiển thị")
 
     # Sắp tăng dần để khi vẽ orientation='h', mục cao nhất nằm trên cùng
-    df_sub = df_sub.sort_values('profit', ascending=True)
+    df_sub = df_sub.sort_values(metric_col, ascending=True)
 
     fig = px.bar(
         df_sub,
-        x='profit',
+        x=metric_col,
         y=subcat_col,
         orientation='h',
-        color='profit',
-        color_continuous_scale='RdYlGn',
-        title=f'🏆 Top {len(df_sub)} Sub-category theo Lợi nhuận',
-        labels={'profit': 'Lợi nhuận ($)', subcat_col: 'Sub-category'}
+        color=metric_col,
+        color_continuous_scale='Viridis',
+        title=f'🏆 Top {len(df_sub)} Danh mục theo {metric_label}',
+        labels={metric_col: metric_label, subcat_col: 'Danh mục'}
     )
     fig.update_layout(template='plotly_white', coloraxis_showscale=False)
     return fig
@@ -172,4 +172,3 @@ def plot_sales_heatmap(df):
     )
     fig.update_layout(template='plotly_white')
     return fig
- 
